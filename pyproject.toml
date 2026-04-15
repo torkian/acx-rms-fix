@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acx-rms-fix"
-version = "0.1.1"
+version = "0.1.2"
 description = "Fix ACX audiobook rejection errors — RMS too low, peak too high, noise floor too high — in one command."
 readme = "README.md"
 license = { file = "LICENSE" }

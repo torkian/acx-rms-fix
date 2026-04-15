@@ -15,6 +15,11 @@ packaging/dist/
 packaging/_gui_entry.py
 packaging/vendor/
 
+# Icon intermediates — final .icns / .ico / .png are committed,
+# sources are regenerated from packaging/icons/generate_icon.py
+packaging/icons/src/
+packaging/icons/acx-rms-fix.iconset/
+
 # pytest
 .pytest_cache/
 .coverage

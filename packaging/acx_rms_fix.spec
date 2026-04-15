@@ -26,6 +26,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 VENDOR_DIR = SPEC_DIR / "vendor"
 
 is_windows = sys.platform.startswith("win")
+is_macos = sys.platform == "darwin"
 ffmpeg_name = "ffmpeg.exe" if is_windows else "ffmpeg"
 ffmpeg_path = VENDOR_DIR / ffmpeg_name
 
@@ -34,6 +35,18 @@ if not ffmpeg_path.is_file():
         f"vendored ffmpeg not found at {ffmpeg_path}\n"
         "run `packaging/fetch-ffmpeg.sh` first"
     )
+
+# Platform-native icons produced by packaging/icons/generate_icon.py.
+# Missing icons are not fatal — the build falls back to PyInstaller's
+# default so CI keeps working even if someone forgets to regenerate.
+ICON_DIR = SPEC_DIR / "icons"
+if is_windows:
+    icon_candidate = ICON_DIR / "acx-rms-fix.ico"
+elif is_macos:
+    icon_candidate = ICON_DIR / "acx-rms-fix.icns"
+else:
+    icon_candidate = ICON_DIR / "acx-rms-fix.png"
+icon_arg = str(icon_candidate) if icon_candidate.is_file() else None
 
 # Entry point: a one-line shim that calls gui.main, written next to
 # the spec so we don't pollute src/ with a second __main__.
@@ -90,19 +103,20 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=icon_arg,
 )
 
 if sys.platform == "darwin":
     app = BUNDLE(
         exe,
         name="acx-rms-fix-gui.app",
-        icon=None,
+        icon=icon_arg,
         bundle_identifier="net.torkian.acx-rms-fix",
         info_plist={
             "CFBundleName": "acx-rms-fix",
             "CFBundleDisplayName": "acx-rms-fix",
-            "CFBundleShortVersionString": "0.1.1",
-            "CFBundleVersion": "0.1.1",
+            "CFBundleShortVersionString": "0.1.2",
+            "CFBundleVersion": "0.1.2",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "11.0",
         },
