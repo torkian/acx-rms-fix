@@ -26,13 +26,45 @@ You're in the right place. This tool runs a single, known-good **ffmpeg** master
 
 ## Install
 
-### 1. Install Python 3.9 or newer
+### Option A — Download the app (recommended for narrators)
+
+No Python, no terminal, no ffmpeg install. Just download and run.
+
+| Platform | Download | Notes |
+|---|---|---|
+| **macOS (Apple Silicon, M1/M2/M3/M4)** | [`acx-rms-fix-gui-macos-arm64.dmg`](https://github.com/torkian/acx-rms-fix/releases/latest) | ~30 MB, ffmpeg bundled |
+| **Windows 10 / 11 (64-bit)** | [`acx-rms-fix-gui-windows-x64.exe`](https://github.com/torkian/acx-rms-fix/releases/latest) | ~80 MB, ffmpeg bundled |
+| **Linux** | build from source (Option B) | standalone binary is on the v0.2 roadmap |
+| **macOS Intel** | build from source (Option B) | standalone binary is on the v0.2 roadmap |
+
+**First launch:** because the binaries aren't code-signed (costs $99/yr per OS — deferred until the project has real traction), your OS will warn you the first time:
+
+- **macOS:** right-click the .app → **Open** → *Open* in the confirmation dialog. Only needed once.
+- **Windows:** SmartScreen shows *"Windows protected your PC"* → click **More info** → **Run anyway**. Only needed once.
+
+**Verify it works:** open a terminal and run
+
+```sh
+# macOS
+/Applications/acx-rms-fix-gui.app/Contents/MacOS/acx-rms-fix-gui --selftest
+
+# Windows (PowerShell)
+.\acx-rms-fix-gui-windows-x64.exe --selftest
+```
+
+You should see `PASS  self-test succeeded — install is healthy`. If not, see [Troubleshooting](docs/troubleshooting.md).
+
+### Option B — Install from source (developers, Linux users, Intel Mac)
+
+Requires Python 3.9+ and ffmpeg on your PATH.
+
+**1. Install Python 3.9 or newer**
 
 - **macOS:** already installed, or `brew install python`
 - **Windows:** [python.org/downloads](https://www.python.org/downloads/) — check *"Add Python to PATH"* during install
 - **Linux:** `sudo apt install python3 python3-pip` (or your distro's equivalent)
 
-### 2. Install ffmpeg
+**2. Install ffmpeg**
 
 ```sh
 # macOS
@@ -40,7 +72,6 @@ brew install ffmpeg
 
 # Windows (PowerShell)
 winget install Gyan.FFmpeg
-# — or download from https://www.gyan.dev/ffmpeg/builds/ and add bin\ to PATH
 
 # Debian / Ubuntu
 sudo apt install ffmpeg
@@ -48,7 +79,7 @@ sudo apt install ffmpeg
 
 Verify: `ffmpeg -version`.
 
-### 3. Install acx-rms-fix
+**3. Install acx-rms-fix**
 
 ```sh
 pipx install git+https://github.com/torkian/acx-rms-fix

@@ -1,18 +1,70 @@
 # Getting started — for narrators
 
-This guide gets you from *"ACX rejected my chapter"* to *"my file passes ACX"* in five steps. **No terminal experience required.** If any step trips you up, open an [issue](https://github.com/torkian/acx-rms-fix/issues) and we'll fix the guide.
+This guide gets you from *"ACX rejected my chapter"* to *"my file passes ACX"*. **No terminal experience required.** If any step trips you up, open an [issue](https://github.com/torkian/acx-rms-fix/issues) and we'll fix the guide.
 
 ---
 
 ## What you need
 
-- A computer running Windows 10/11, macOS, or Linux.
-- About 15 minutes for first-time setup. After that it's seconds per file.
+- A computer running Windows 10/11 or macOS (Apple Silicon).
 - Your rejected audiobook file(s). Any of MP3, WAV, FLAC, or M4A will work.
 
 ---
 
-## Step 1 — Install Python
+## The fast path (recommended)
+
+**Step 1 — Download the app.** Go to [the releases page](https://github.com/torkian/acx-rms-fix/releases/latest) and pick the right one:
+
+- **macOS M1/M2/M3/M4:** click `acx-rms-fix-gui-macos-arm64.dmg`
+- **Windows 10/11 64-bit:** click `acx-rms-fix-gui-windows-x64.exe`
+
+These are self-contained — they already include ffmpeg inside. You don't need to install Python, ffmpeg, or anything else.
+
+**Step 2 — First launch (one-time only).**
+
+The app isn't code-signed yet (code signing costs $99/year per OS and is on the v0.2 roadmap). Your OS will warn you the first time you open it. This is normal for small open-source tools.
+
+**macOS:**
+
+1. Double-click the `.dmg` file. A window appears with the app inside.
+2. Drag `acx-rms-fix-gui.app` into your Applications folder.
+3. Open Applications, find the app, **right-click → Open** (not double-click the first time).
+4. A dialog says *"acx-rms-fix-gui.app can't be opened because Apple cannot check it for malicious software."* Click **Open**.
+5. From now on, regular double-click works.
+
+**Windows:**
+
+1. Double-click `acx-rms-fix-gui-windows-x64.exe`.
+2. SmartScreen shows *"Windows protected your PC."*
+3. Click the small **More info** link (it's at the top of the dialog).
+4. Click **Run anyway**.
+5. From now on, Windows remembers and won't ask again.
+
+If you want to confirm the app is healthy, open Terminal (macOS) or PowerShell (Windows) and run it with `--selftest`:
+
+```sh
+# macOS
+/Applications/acx-rms-fix-gui.app/Contents/MacOS/acx-rms-fix-gui --selftest
+
+# Windows
+.\acx-rms-fix-gui-windows-x64.exe --selftest
+```
+
+You should see `PASS  self-test succeeded — install is healthy`.
+
+**Step 3 — Drop in your files.** Open the app. Click **+ Add files**, select all the chapter files ACX rejected. Click **Fix all files**. Each row turns green. Click **Save report…** if your producer wants one.
+
+**Step 4 — Upload to ACX.** Look in your output folder for the files ending in `_ACX.mp3`. Those are the mastered versions. Upload those, not the originals.
+
+Done. Skip the rest of this page unless you prefer to install from source.
+
+---
+
+## Alternative — install from source (power users)
+
+If you're on Linux, Intel Mac, or you just want the command-line version, follow these steps.
+
+### Step 1 — Install Python
 
 Python is a free programming language. `acx-rms-fix` runs on top of it, but you won't have to write any Python code yourself.
 

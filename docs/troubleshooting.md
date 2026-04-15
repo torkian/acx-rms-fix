@@ -4,6 +4,42 @@ Start here if something went wrong. The cases are in order of how often they tri
 
 ---
 
+## "macOS says the app is damaged / cannot be opened because Apple cannot check it for malicious software"
+
+This is **Gatekeeper** warning you that the app isn't code-signed by an Apple-registered developer. The app is fine — code signing costs $99/year and is deferred to v0.2.
+
+**Fix (one-time):**
+
+1. Open Finder, find `acx-rms-fix-gui.app` (in `/Applications` or wherever you moved it).
+2. **Right-click** (or Ctrl-click) the app → **Open** (do not double-click).
+3. A dialog appears saying Apple can't verify the developer. Click **Open**.
+4. From now on, regular double-click works.
+
+If the dialog only has a *Cancel* button and no *Open* button (happens on newer macOS Gatekeeper tightening), open *System Settings* → *Privacy & Security*, scroll down, and click **Open Anyway** next to the blocked app notice.
+
+As a last resort, in Terminal:
+
+```sh
+xattr -d com.apple.quarantine /Applications/acx-rms-fix-gui.app
+```
+
+This removes the quarantine flag macOS sets on files downloaded from the internet.
+
+---
+
+## "Windows protected your PC / SmartScreen" popup
+
+This is **Windows SmartScreen** warning you that an unsigned binary from an unknown publisher is about to run. The app is fine — Windows code signing also costs money and is deferred to v0.2.
+
+**Fix (one-time):**
+
+1. When the blue *"Windows protected your PC"* dialog appears, click the small **More info** link at the top (it's easy to miss).
+2. Two new lines appear showing the app name and publisher.
+3. Click the **Run anyway** button that now appears at the bottom.
+4. From now on, Windows remembers your choice and lets the app run.
+
+---
+
 ## "ACX still says RMS is too low even after I ran acx-rms-fix"
 
 **Almost always: you uploaded the original file, not the mastered one.**
