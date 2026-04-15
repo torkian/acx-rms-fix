@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest a new feature or an improvement.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Please describe the problem you're trying to solve — the "why" is more useful than a specific "how", because it lets us consider alternative solutions.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation, not the solution. "I have 300 chapters and running the tool on each takes an hour" is more useful than "add parallelism".
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution (optional)
+      description: If you have a specific idea for how this should work, describe it here.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: What other tools or workflows have you tried? Why didn't they solve the problem?
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      description: acx-rms-fix is intentionally focused on ACX mastering. Please confirm the feature fits the scope.
+      options:
+        - label: This is about getting audiobook files past ACX's upload checker (not general audio editing, not other platforms).
+          required: true
