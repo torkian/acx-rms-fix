@@ -87,5 +87,7 @@ def test_write_report_picks_format_from_extension(tmp_path):
     json_path = tmp_path / "report.json"
     write_report(rep, md_path)
     write_report(rep, json_path)
-    assert md_path.read_text().startswith("# acx-rms-fix report")
-    assert json.loads(json_path.read_text())["version"] == "0.1.0"
+    # Read explicitly as UTF-8 so this works on Windows, whose default
+    # codec (cp1252) can't decode the ✅ / ✗ glyphs in the report.
+    assert md_path.read_text(encoding="utf-8").startswith("# acx-rms-fix report")
+    assert json.loads(json_path.read_text(encoding="utf-8"))["version"] == "0.1.0"
