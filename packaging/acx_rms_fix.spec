@@ -60,11 +60,18 @@ GUI_ENTRY.write_text(
 
 block_cipher = None
 
+# Package resources (window icon PNG used by gui.py iconphoto).
+resources_dir = SRC_DIR / "acx_rms_fix" / "resources"
+datas: list[tuple[str, str]] = []
+if resources_dir.is_dir():
+    for res in sorted(resources_dir.glob("*.png")):
+        datas.append((str(res), "acx_rms_fix/resources"))
+
 a = Analysis(
     [str(GUI_ENTRY)],
     pathex=[str(SRC_DIR)],
     binaries=[(str(ffmpeg_path), ".")],
-    datas=[],
+    datas=datas,
     hiddenimports=[
         "acx_rms_fix",
         "acx_rms_fix.core",
@@ -115,8 +122,8 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "acx-rms-fix",
             "CFBundleDisplayName": "acx-rms-fix",
-            "CFBundleShortVersionString": "0.1.2",
-            "CFBundleVersion": "0.1.2",
+            "CFBundleShortVersionString": "0.1.3",
+            "CFBundleVersion": "0.1.3",
             "NSHighResolutionCapable": True,
             "LSMinimumSystemVersion": "11.0",
         },

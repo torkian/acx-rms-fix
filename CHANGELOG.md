@@ -18,6 +18,21 @@ All notable changes to `acx-rms-fix` are documented here. Format loosely based o
 
 ---
 
+## [0.1.3] — branding polish
+
+### Added
+
+- **GUI window icon** — the Tkinter window, Dock icon, and taskbar entry now show the same brand mark as the bundled `.icns` / `.ico`. Achieved by shipping a 512 px PNG as package data under `acx_rms_fix/resources/icon.png` and setting `root.iconphoto(True, PhotoImage(file=...))` on startup. `_resolve_icon_path()` finds the asset both in source installs and inside a PyInstaller-frozen bundle (via `sys._MEIPASS`).
+- **README header image** — the logo appears centered at the top of the repo landing page.
+- **GitHub social preview** — `.github/og-image.png` committed at 512 px so link previews on Slack / Twitter / etc. show the brand mark (also uploadable manually via GitHub → Settings → Social preview).
+- **Repo topics** — 18 topics set via `gh repo edit` for discoverability: acx, audiobook, rms, ffmpeg, audible, mastering, narrator, audio-processing, loudnorm, ebu-r128, audio-normalization, python, cli, gui, tkinter, pyinstaller, cross-platform, audiobooks.
+
+### Changed
+
+- PyInstaller spec now bundles `src/acx_rms_fix/resources/*.png` as package data so the frozen .app and .exe carry the icon asset alongside the vendored ffmpeg binary.
+
+---
+
 ## [0.1.2] — app icon
 
 ### Added

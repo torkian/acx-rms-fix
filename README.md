@@ -1,6 +1,10 @@
-# acx-rms-fix
+<p align="center">
+  <img src="packaging/icons/acx-rms-fix.png" alt="acx-rms-fix logo" width="160" />
+</p>
 
-**Fix ACX audiobook rejection errors — *RMS too low*, *peak too high*, *noise floor too high* — in one command.**
+<h1 align="center">acx-rms-fix</h1>
+
+<p align="center"><strong>Fix ACX audiobook rejection errors — <em>RMS too low</em>, <em>peak too high</em>, <em>noise floor too high</em> — in one command.</strong></p>
 
 [![test](https://github.com/torkian/acx-rms-fix/actions/workflows/test.yml/badge.svg)](https://github.com/torkian/acx-rms-fix/actions/workflows/test.yml)
 [![lint](https://github.com/torkian/acx-rms-fix/actions/workflows/lint.yml/badge.svg)](https://github.com/torkian/acx-rms-fix/actions/workflows/lint.yml)

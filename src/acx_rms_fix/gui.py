@@ -48,6 +48,32 @@ FFMPEG_DOWNLOAD_URL_WINDOWS = "https://www.gyan.dev/ffmpeg/builds/"
 FFMPEG_DOWNLOAD_URL_GENERIC = "https://ffmpeg.org/download.html"
 
 
+def _resolve_icon_path() -> Path | None:
+    """
+    Return a path to the window icon PNG, or None if it can't be found.
+
+    Three locations, in order:
+      1. Frozen bundle: sys._MEIPASS/acx_rms_fix/resources/icon.png
+      2. Source install: the resources/ folder next to this file
+      3. Nothing — caller falls back to the default Tk icon
+    """
+    candidates: list[Path] = []
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        meipass = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+        candidates.extend(
+            [
+                meipass / "acx_rms_fix" / "resources" / "icon.png",
+                meipass / "resources" / "icon.png",
+                meipass / "icon.png",
+            ]
+        )
+    candidates.append(Path(__file__).resolve().parent / "resources" / "icon.png")
+    for p in candidates:
+        if p.is_file():
+            return p
+    return None
+
+
 def _status_for(result: FileResult, m: Measurement | None) -> str:
     if result.error:
         return f"❌ ERROR: {result.error}"
@@ -75,6 +101,16 @@ class AcxRmsFixApp:
         self.root.title(f"acx-rms-fix v{__version__}")
         self.root.geometry("780x520")
         self.root.minsize(640, 420)
+
+        icon_path = _resolve_icon_path()
+        if icon_path is not None:
+            try:
+                self._icon_image = tk.PhotoImage(file=str(icon_path))
+                self.root.iconphoto(True, self._icon_image)
+            except tk.TclError:
+                # Headless runners or a Tk build without PNG support —
+                # the app still works, just without a custom window icon.
+                pass
 
         self.queue_files: list[Path] = []
         self.results: list[FileResult] = []
