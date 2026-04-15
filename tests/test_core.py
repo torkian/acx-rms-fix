@@ -167,6 +167,8 @@ def test_limiter_ceiling_is_approximately_minus_3_db():
 
 def test_require_ffmpeg_raises_when_missing(monkeypatch):
     monkeypatch.setattr(core.shutil, "which", lambda _: None)
+    # Make sure frozen-mode check doesn't accidentally find something
+    monkeypatch.setattr(core.sys, "frozen", False, raising=False)
     with pytest.raises(core.FfmpegMissingError):
         core.require_ffmpeg()
 
@@ -184,6 +186,37 @@ def test_require_ffmpeg_returns_version_line_when_present(monkeypatch):
 
     monkeypatch.setattr(core.subprocess, "run", fake_run)
     assert core.require_ffmpeg().startswith("ffmpeg version 8.1")
+
+
+def test_resolve_ffmpeg_prefers_bundled_over_path(monkeypatch, tmp_path):
+    """When running under PyInstaller (sys.frozen / _MEIPASS) the bundled
+    binary wins over whatever is on PATH."""
+    bundled = tmp_path / "ffmpeg"
+    bundled.write_bytes(b"#!/bin/sh\necho fake\n")
+    bundled.chmod(0o755)
+
+    monkeypatch.setattr(core.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(core.sys, "_MEIPASS", str(tmp_path), raising=False)
+    monkeypatch.setattr(core.shutil, "which", lambda _: "/usr/bin/should-not-be-used")
+
+    if core.platform.system() == "Windows":
+        # On Windows the lookup expects ffmpeg.exe
+        (tmp_path / "ffmpeg.exe").write_bytes(b"x")
+        assert core._resolve_ffmpeg() == str(tmp_path / "ffmpeg.exe")
+    else:
+        assert core._resolve_ffmpeg() == str(bundled)
+
+
+def test_resolve_ffmpeg_falls_back_to_path_when_not_frozen(monkeypatch):
+    monkeypatch.setattr(core.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(core.shutil, "which", lambda _: "/usr/local/bin/ffmpeg")
+    assert core._resolve_ffmpeg() == "/usr/local/bin/ffmpeg"
+
+
+def test_resolve_ffmpeg_returns_empty_when_nothing_found(monkeypatch):
+    monkeypatch.setattr(core.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(core.shutil, "which", lambda _: None)
+    assert core._resolve_ffmpeg() == ""
 
 
 # ---------------- process_one error paths ----------------

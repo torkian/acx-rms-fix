@@ -14,6 +14,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -141,18 +142,41 @@ class RunReport:
 
 
 class FfmpegMissingError(RuntimeError):
-    """Raised when `ffmpeg` is not on PATH."""
+    """Raised when `ffmpeg` cannot be located (bundled or on PATH)."""
+
+
+def _resolve_ffmpeg() -> str:
+    """
+    Return an absolute path to a usable ffmpeg executable, or "" if none.
+
+    Resolution order:
+      1. A binary bundled next to the frozen executable (PyInstaller's
+         sys._MEIPASS). This is how the downloadable .exe / .app ship
+         ffmpeg without the user installing anything.
+      2. `shutil.which("ffmpeg")` — the system PATH fallback used by
+         `pipx` installs and developer environments.
+    """
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        bundle_dir = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+        exe_name = "ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg"
+        candidate = bundle_dir / exe_name
+        if candidate.is_file():
+            return str(candidate)
+    found = shutil.which("ffmpeg")
+    return found or ""
 
 
 def require_ffmpeg() -> str:
     """Return the first line of `ffmpeg -version`, or raise FfmpegMissingError."""
-    exe = shutil.which("ffmpeg")
+    exe = _resolve_ffmpeg()
     if not exe:
         raise FfmpegMissingError(
-            "ffmpeg not found on PATH.\n"
+            "ffmpeg not found.\n"
             "  macOS:   brew install ffmpeg\n"
             "  Windows: winget install Gyan.FFmpeg  (or https://www.gyan.dev/ffmpeg/builds/)\n"
-            "  Debian:  sudo apt install ffmpeg"
+            "  Debian:  sudo apt install ffmpeg\n"
+            "Or download the acx-rms-fix-gui bundle from the releases page,\n"
+            "which ships ffmpeg inside the app."
         )
     try:
         out = subprocess.run([exe, "-version"], capture_output=True, text=True, check=True).stdout
@@ -167,8 +191,9 @@ def _devnull() -> str:
 
 def _run_ffmpeg(args: list[str]) -> subprocess.CompletedProcess:
     """Run ffmpeg capturing combined stderr/stdout. Never raises on non-zero."""
+    exe = _resolve_ffmpeg() or "ffmpeg"
     return subprocess.run(
-        ["ffmpeg", "-hide_banner", "-nostats", *args],
+        [exe, "-hide_banner", "-nostats", *args],
         capture_output=True,
         text=True,
     )

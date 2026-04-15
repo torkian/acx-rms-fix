@@ -343,10 +343,109 @@ class AcxRmsFixApp:
         webbrowser.open(HELP_URL)
 
 
+# ---------------- headless self-test ----------------
+
+
+def _run_selftest() -> int:
+    """
+    Headless round-trip: synthesize a quiet WAV, master it, measure
+    the output, print the result. Returns 0 on success, non-zero on
+    any failure. Used by end users to validate an install without
+    having to open the GUI, and by CI to smoke-test the frozen binary.
+    """
+    import math
+    import struct
+    import tempfile
+    import wave
+    from pathlib import Path as _Path
+
+    from .core import (
+        PEAK_MAX,
+        RMS_MAX,
+        RMS_MIN,
+        _resolve_ffmpeg,
+        master,
+        measure,
+        require_ffmpeg,
+    )
+
+    print("acx-rms-fix self-test")
+    print("=" * 40)
+
+    try:
+        version = require_ffmpeg()
+    except Exception as exc:
+        print(f"FAIL  could not locate ffmpeg: {exc}")
+        return 1
+
+    print(f"ffmpeg: {_resolve_ffmpeg()}")
+    print(f"version: {version or '(unknown)'}")
+
+    with tempfile.TemporaryDirectory(prefix="acxrmsfix-selftest-") as d:
+        src = _Path(d) / "source.wav"
+        out = _Path(d) / "source_ACX.mp3"
+
+        sr = 44100
+        duration_s = 2.0
+        rms_db = -28.0
+        peak_amp = int(32767 * (10 ** (rms_db / 20)) * math.sqrt(2))
+        silence_samples = int(sr * 0.3)
+        tone_samples = int(sr * duration_s)
+
+        samples: list[int] = []
+        for _ in range(silence_samples):
+            samples.append(0)
+        for n in range(tone_samples):
+            v = int(peak_amp * math.sin(2 * math.pi * 440.0 * n / sr))
+            samples.append(max(-32768, min(32767, v)))
+        for _ in range(silence_samples):
+            samples.append(0)
+
+        with wave.open(str(src), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(sr)
+            w.writeframes(b"".join(struct.pack("<h", s) for s in samples))
+
+        try:
+            master(src, out)
+        except Exception as exc:
+            print(f"FAIL  master(): {exc}")
+            return 1
+
+        m = measure(out)
+        print(f"output RMS:  {m.rms_db:.1f} dB  (target {RMS_MIN}..{RMS_MAX})")
+        print(f"output peak: {m.peak_db:.1f} dB  (max {PEAK_MAX})")
+        print(f"noise floor ok: {m.noise_floor_ok}")
+
+        if not m.passes:
+            print("FAIL  output did not meet ACX spec")
+            return 1
+
+        print("PASS  self-test succeeded — install is healthy")
+        return 0
+
+
 # ---------------- entry point ----------------
 
 
 def main() -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog="acx-rms-fix-gui",
+        description="acx-rms-fix GUI (Tkinter).",
+    )
+    parser.add_argument(
+        "--selftest",
+        action="store_true",
+        help="run a headless round-trip test against the bundled ffmpeg and exit",
+    )
+    args, _ = parser.parse_known_args()
+
+    if args.selftest:
+        return _run_selftest()
+
     root = tk.Tk()
     try:
         AcxRmsFixApp(root)

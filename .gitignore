@@ -9,6 +9,12 @@ build/
 dist/
 .eggs/
 
+# PyInstaller build artefacts
+packaging/build/
+packaging/dist/
+packaging/_gui_entry.py
+packaging/vendor/
+
 # pytest
 .pytest_cache/
 .coverage
