@@ -1,0 +1,126 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-macos-arm64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch bundled ffmpeg (arm64 static)
+        shell: bash
+        run: bash packaging/fetch-ffmpeg.sh
+
+      - name: Install package + PyInstaller
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pyinstaller
+
+      - name: Build .app bundle
+        shell: bash
+        working-directory: packaging
+        run: pyinstaller acx_rms_fix.spec
+
+      - name: Smoke-test frozen app
+        shell: bash
+        run: |
+          env -i PATH="/usr/bin:/bin" HOME="$HOME" \
+            packaging/dist/acx-rms-fix-gui --selftest
+
+      - name: Package .dmg
+        shell: bash
+        working-directory: packaging/dist
+        run: |
+          hdiutil create \
+            -volname "acx-rms-fix" \
+            -srcfolder "acx-rms-fix-gui.app" \
+            -ov -format UDZO \
+            "acx-rms-fix-gui-macos-arm64.dmg"
+          ls -lh acx-rms-fix-gui-macos-arm64.dmg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acx-rms-fix-gui-macos-arm64
+          path: packaging/dist/acx-rms-fix-gui-macos-arm64.dmg
+          if-no-files-found: error
+
+  build-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch bundled ffmpeg (win64 static)
+        shell: bash
+        run: bash packaging/fetch-ffmpeg.sh
+
+      - name: Install package + PyInstaller
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pyinstaller
+
+      - name: Build .exe
+        shell: bash
+        working-directory: packaging
+        run: pyinstaller acx_rms_fix.spec
+
+      - name: Smoke-test frozen exe
+        shell: bash
+        run: |
+          # Strip ffmpeg from PATH — only the bundled one should be visible.
+          export PATH="/c/Windows/system32:/c/Windows"
+          ./packaging/dist/acx-rms-fix-gui.exe --selftest
+
+      - name: Rename for release
+        shell: bash
+        run: |
+          mv packaging/dist/acx-rms-fix-gui.exe packaging/dist/acx-rms-fix-gui-windows-x64.exe
+          ls -lh packaging/dist/acx-rms-fix-gui-windows-x64.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acx-rms-fix-gui-windows-x64
+          path: packaging/dist/acx-rms-fix-gui-windows-x64.exe
+          if-no-files-found: error
+
+  attach-to-release:
+    needs: [build-macos-arm64, build-windows-x64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f -printf '%p %s bytes\n'
+
+      - name: Upload to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/acx-rms-fix-gui-macos-arm64/acx-rms-fix-gui-macos-arm64.dmg
+            artifacts/acx-rms-fix-gui-windows-x64/acx-rms-fix-gui-windows-x64.exe
+          fail_on_unmatched_files: true
