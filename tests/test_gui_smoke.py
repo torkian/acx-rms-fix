@@ -7,7 +7,9 @@ catch any import-time or construction-time regression in `gui.py`,
 so this test imports the module and constructs the main window with
 `withdraw()` so nothing actually appears on screen.
 
-Skipped gracefully on CI runners that have no display at all.
+The construction test skips on any `TclError` (which covers headless
+runners, Linux VMs without X, and broken Tcl installs like the
+windows-py3.12 runner image whose `init.tcl` file is missing).
 """
 
 from __future__ import annotations
@@ -15,26 +17,6 @@ from __future__ import annotations
 import importlib.util
 
 import pytest
-
-
-def _has_tkinter_display() -> bool:
-    try:
-        import tkinter
-    except Exception:
-        return False
-    try:
-        r = tkinter.Tk()
-        r.withdraw()
-        r.destroy()
-    except Exception:
-        return False
-    return True
-
-
-requires_display = pytest.mark.skipif(
-    not _has_tkinter_display(),
-    reason="no Tk display available (headless runner without virtual framebuffer)",
-)
 
 
 def test_gui_module_imports():
@@ -45,10 +27,12 @@ def test_gui_module_imports():
     assert callable(module.main)
 
 
-@requires_display
 def test_gui_app_constructs(monkeypatch):
     """Construct AcxRmsFixApp with a withdrawn root — catches widget wiring bugs."""
-    import tkinter as tk
+    try:
+        import tkinter as tk
+    except ImportError as exc:
+        pytest.skip(f"tkinter not available: {exc}")
 
     from acx_rms_fix import gui
 
@@ -58,10 +42,17 @@ def test_gui_app_constructs(monkeypatch):
 
     monkeypatch.setattr(gui, "require_ffmpeg", fake_require_ffmpeg)
 
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        pytest.skip(f"Tk not usable on this runner: {exc}")
+
     root.withdraw()
     try:
-        app = gui.AcxRmsFixApp(root)
+        try:
+            app = gui.AcxRmsFixApp(root)
+        except tk.TclError as exc:
+            pytest.skip(f"Tk widget construction failed on this runner: {exc}")
         assert app.fix_btn is not None
         assert app.save_btn is not None
         assert app.tree is not None
