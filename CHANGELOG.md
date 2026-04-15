@@ -6,13 +6,39 @@ All notable changes to `acx-rms-fix` are documented here. Format loosely based o
 
 ### Planned
 
-- Standalone binaries via PyInstaller (single `.exe` / `.app` download, no Python required).
+- Code signing (Apple Developer + Windows EV cert) so first-run warnings go away.
+- macOS Intel standalone binary.
+- Linux `.AppImage`.
 - Publish to PyPI so `pipx install acx-rms-fix` works without `git+`.
 - Head / tail silence insertion (`--head 0.75 --tail 2.0`).
 - WAV / FLAC output modes for narrators who keep masters in WAV.
 - Drag-and-drop in the GUI.
 - Homebrew tap.
 - Real screenshots in `docs/`.
+
+---
+
+## [0.1.1] — downloadable apps
+
+First release with zero-dependency binaries. Target users no longer need to install Python, pipx, or ffmpeg.
+
+### Added
+
+- **Windows x64 binary** (`acx-rms-fix-gui-windows-x64.exe`) with bundled LGPL-built ffmpeg — double-click to run.
+- **macOS Apple Silicon binary** (`acx-rms-fix-gui-macos-arm64.dmg`) with bundled static arm64 ffmpeg — drag to Applications.
+- **`--selftest` mode** in the GUI entry point — runs a headless round-trip against the bundled ffmpeg and prints PASS / FAIL. Usable by end users to verify an install without opening the window, and by CI to smoke-test the frozen bundle.
+- **`packaging/acx_rms_fix.spec`** PyInstaller spec and **`packaging/fetch-ffmpeg.sh`** vendor-download script supporting macOS arm64 / x86_64, Linux x86_64, and Windows x64.
+- **Release workflow** (`.github/workflows/release.yml`) that builds and attaches the two binaries to every `v*` tag.
+
+### Changed
+
+- `core.require_ffmpeg()` now resolves ffmpeg via the new `_resolve_ffmpeg()` helper which checks `sys._MEIPASS` (frozen bundle) before falling back to `shutil.which("ffmpeg")`. Source installs continue to use PATH ffmpeg exactly as before.
+- README and `docs/getting-started.md` lead with "Option A — download the app" (zero prerequisites). Source install moves to "Option B".
+- `docs/troubleshooting.md` adds first-launch entries for macOS Gatekeeper and Windows SmartScreen with step-by-step bypass instructions.
+
+### Fixed
+
+Nothing — 0.1.0 shipped with no outstanding bugs.
 
 ---
 
