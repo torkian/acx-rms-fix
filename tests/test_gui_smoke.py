@@ -15,15 +15,36 @@ windows-py3.12 runner image whose `init.tcl` file is missing).
 from __future__ import annotations
 
 import importlib.util
+import re
 
 import pytest
+
+
+def test_report_default_filename_format():
+    """Default report filename must embed an ISO-8601-ish timestamp."""
+    try:
+        from acx_rms_fix.gui import _report_default_filename
+    except ImportError as exc:
+        pytest.skip(f"tkinter not available: {exc}")
+
+    name = _report_default_filename()
+    assert name.startswith("acx-rms-fix-report-")
+    assert name.endswith(".md")
+    ts_part = name[len("acx-rms-fix-report-") : -len(".md")]
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}", ts_part), ts_part
+
+    name_json = _report_default_filename(ext=".json")
+    assert name_json.endswith(".json")
 
 
 def test_gui_module_imports():
     """Module must at least be importable — catches syntax / import errors."""
     spec = importlib.util.find_spec("acx_rms_fix.gui")
     assert spec is not None
-    module = importlib.import_module("acx_rms_fix.gui")
+    try:
+        module = importlib.import_module("acx_rms_fix.gui")
+    except ImportError as exc:
+        pytest.skip(f"tkinter not available: {exc}")
     assert callable(module.main)
 
 
