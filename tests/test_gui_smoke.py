@@ -21,6 +21,10 @@ import pytest
 
 def test_gui_module_imports():
     """Module must at least be importable — catches syntax / import errors."""
+    try:
+        import tkinter  # noqa: F401
+    except ImportError as exc:
+        pytest.skip(f"tkinter not available: {exc}")
     spec = importlib.util.find_spec("acx_rms_fix.gui")
     assert spec is not None
     module = importlib.import_module("acx_rms_fix.gui")
