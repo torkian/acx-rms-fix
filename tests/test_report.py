@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from acx_rms_fix.core import FileResult, Measurement, RunReport
-from acx_rms_fix.report import to_json, to_markdown, write_report
+from acx_rms_fix.report import to_json, to_jsonl_line, to_markdown, write_report
 
 
 def _sample_report() -> RunReport:
@@ -79,6 +79,24 @@ def test_markdown_all_pass_footer():
     rep.results.pop()  # drop the failing one
     md = to_markdown(rep)
     assert "All files meet ACX upload requirements." in md
+
+
+def test_jsonl_line_is_valid_single_line_json():
+    rep = _sample_report()
+    line = to_jsonl_line(rep.results[0])
+    assert "\n" not in line
+    data = json.loads(line)
+    assert data["input_path"] == "chapter01.mp3"
+    assert data["passed"] is True
+    assert data["after"]["rms_ok"] is True
+
+
+def test_jsonl_line_failed_result():
+    rep = _sample_report()
+    line = to_jsonl_line(rep.results[1])
+    data = json.loads(line)
+    assert data["passed"] is False
+    assert data["action"] == "check"
 
 
 def test_write_report_picks_format_from_extension(tmp_path):

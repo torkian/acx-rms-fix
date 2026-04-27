@@ -17,7 +17,7 @@ from .core import (
     process_one,
     require_ffmpeg,
 )
-from .report import write_report
+from .report import to_jsonl_line, write_report
 
 # ---------------- ANSI colors ----------------
 
@@ -148,6 +148,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="only print errors and summary",
     )
     p.add_argument(
+        "--json-lines",
+        action="store_true",
+        help=(
+            "print each file result as a JSON line to stdout as it completes "
+            "(implies --quiet; pipe to jq for easy scripting)"
+        ),
+    )
+    p.add_argument(
         "-V",
         "--version",
         action="version",
@@ -168,8 +176,9 @@ def main(argv: list[str] | None = None) -> int:
         print(red(f"error: {exc}"), file=sys.stderr)
         return 1
 
+    json_lines = args.json_lines
     report = RunReport(version=__version__, ffmpeg_version=ffmpeg_version)
-    emit = make_printer(args.quiet)
+    emit = make_printer(quiet=args.quiet or json_lines)
 
     for raw in args.inputs:
         path = Path(raw)
@@ -181,14 +190,16 @@ def main(argv: list[str] | None = None) -> int:
             on_progress=emit,
         )
         report.results.append(result)
-        # Post-run status line (after process_one finished)
-        m = result.after or result.before
-        if result.error and not result.after:
-            print(red(f"  error: {result.error}"))
-        elif m is not None:
-            print(format_measurement_line(m))
+        if json_lines:
+            print(to_jsonl_line(result))
+        else:
+            m = result.after or result.before
+            if result.error and not result.after:
+                print(red(f"  error: {result.error}"))
+            elif m is not None:
+                print(format_measurement_line(m))
 
-    if report.results:
+    if report.results and not json_lines:
         if report.fail_count == 0:
             print(green(f"all {report.pass_count} file(s) ACX-compliant"))
         else:

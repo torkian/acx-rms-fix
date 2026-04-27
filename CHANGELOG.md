@@ -4,6 +4,10 @@ All notable changes to `acx-rms-fix` are documented here. Format loosely based o
 
 ## [Unreleased]
 
+### Added
+
+- **`--json-lines` CLI flag** — prints each file result as a compact JSON object on its own line to stdout, one per file, as it completes. Suppresses the normal coloured output so the stream is machine-readable. Useful for piping to `jq` or other tools (e.g. `acx-rms-fix --json-lines --check *.mp3 | jq '.passed'`). Implemented in `report.to_jsonl_line()` and wired into `cli.main()`.
+
 ### Planned
 
 - Code signing (Apple Developer + Windows EV cert) so first-run warnings go away.
