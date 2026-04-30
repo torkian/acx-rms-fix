@@ -86,6 +86,11 @@ def to_markdown(report: RunReport) -> str:
     return "\n".join(lines) + "\n"
 
 
+def to_jsonl_line(result) -> str:
+    """Serialize one FileResult to a compact JSON line (no trailing newline)."""
+    return json.dumps(result.to_dict(), separators=(",", ":"))
+
+
 def write_report(report: RunReport, path: Path) -> None:
     """Pick format from extension (.md/.markdown → Markdown, else JSON)."""
     ext = path.suffix.lower()
