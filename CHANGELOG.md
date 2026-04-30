@@ -4,6 +4,10 @@ All notable changes to `acx-rms-fix` are documented here. Format loosely based o
 
 ## [Unreleased]
 
+### Added
+
+- **GUI: timestamped Save-report filename** — the "Save report…" dialog now pre-fills the filename as `acx-rms-fix-report-YYYY-MM-DDTHH-MM-SS.md` instead of the static `acx-rms-fix-report.md`, preventing accidental overwrites when multiple runs are saved to the same folder.
+
 ### Planned
 
 - Code signing (Apple Developer + Windows EV cert) so first-run warnings go away.

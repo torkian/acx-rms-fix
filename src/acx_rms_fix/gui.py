@@ -29,6 +29,7 @@ import sys
 import threading
 import tkinter as tk
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -44,6 +45,13 @@ from .core import (
 from .report import write_report
 
 HELP_URL = "https://github.com/torkian/acx-rms-fix#readme"
+
+
+def _report_default_filename(ext: str = ".md") -> str:
+    ts = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+    return f"acx-rms-fix-report-{ts}{ext}"
+
+
 FFMPEG_DOWNLOAD_URL_WINDOWS = "https://www.gyan.dev/ffmpeg/builds/"
 FFMPEG_DOWNLOAD_URL_GENERIC = "https://ffmpeg.org/download.html"
 
@@ -368,7 +376,7 @@ class AcxRmsFixApp:
                 ("JSON report", "*.json"),
                 ("All files", "*.*"),
             ],
-            initialfile="acx-rms-fix-report.md",
+            initialfile=_report_default_filename(),
         )
         if not path:
             return
