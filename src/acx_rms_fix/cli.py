@@ -156,6 +156,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "show what would be done for each input file without calling ffmpeg "
+            "(combine with -o, --replace, or --check to preview that mode)"
+        ),
+    )
+    p.add_argument(
         "-V",
         "--version",
         action="version",
@@ -164,11 +172,40 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+# ---------------- dry-run ----------------
+
+
+def _dry_run(args) -> int:
+    """Preview what would happen for each input without calling ffmpeg."""
+    any_missing = False
+    for raw in args.inputs:
+        path = Path(raw)
+        if not path.is_file():
+            print(red(f"missing: {path}"), file=sys.stderr)
+            any_missing = True
+            continue
+        if args.check:
+            print(f"would check:   {path}")
+        elif args.replace:
+            backup = path.with_suffix(f".orig{path.suffix}")
+            print(f"would replace: {path}  (backup → {backup.name})")
+        else:
+            if args.out_dir is not None:
+                out_path = args.out_dir / f"{path.stem}_ACX.mp3"
+            else:
+                out_path = path.parent / f"{path.stem}_ACX.mp3"
+            print(f"would fix:     {path}  →  {out_path}")
+    return 2 if any_missing else 0
+
+
 # ---------------- main ----------------
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.dry_run:
+        return _dry_run(args)
 
     try:
         ffmpeg_version = require_ffmpeg()

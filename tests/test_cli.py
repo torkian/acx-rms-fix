@@ -115,3 +115,93 @@ def test_main_ffmpeg_missing_returns_1(monkeypatch, capsys):
     assert rc == 1
     err = capsys.readouterr().err
     assert "no ffmpeg" in err
+
+
+# ---------------- --dry-run ----------------
+
+
+def test_parser_accepts_dry_run_flag():
+    ns = cli.build_parser().parse_args(["--dry-run", "a.mp3"])
+    assert ns.dry_run is True
+
+
+def test_dry_run_fix_shows_output_path(tmp_path, capsys):
+    src = tmp_path / "chapter01.mp3"
+    src.write_bytes(b"fake")
+    rc = cli.main(["--dry-run", str(src)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "would fix:" in out
+    assert "chapter01_ACX.mp3" in out
+
+
+def test_dry_run_fix_with_out_dir(tmp_path, capsys):
+    src = tmp_path / "chapter01.mp3"
+    src.write_bytes(b"fake")
+    out_dir = tmp_path / "mastered"
+    rc = cli.main(["--dry-run", "-o", str(out_dir), str(src)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "would fix:" in out
+    assert "mastered" in out
+    assert "chapter01_ACX.mp3" in out
+
+
+def test_dry_run_check_mode(tmp_path, capsys):
+    src = tmp_path / "chapter01.mp3"
+    src.write_bytes(b"fake")
+    rc = cli.main(["--dry-run", "--check", str(src)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "would check:" in out
+
+
+def test_dry_run_replace_mode(tmp_path, capsys):
+    src = tmp_path / "chapter01.mp3"
+    src.write_bytes(b"fake")
+    rc = cli.main(["--dry-run", "--replace", str(src)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "would replace:" in out
+    assert "chapter01.orig.mp3" in out
+
+
+def test_dry_run_missing_file_returns_2(tmp_path, capsys):
+    rc = cli.main(["--dry-run", str(tmp_path / "nope.mp3")])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "missing:" in err
+
+
+def test_dry_run_does_not_call_ffmpeg(monkeypatch, tmp_path, capsys):
+    """--dry-run must not invoke require_ffmpeg or process_one."""
+    src = tmp_path / "ch.mp3"
+    src.write_bytes(b"fake")
+
+    def boom(*_a, **_kw):
+        raise AssertionError("ffmpeg should not be called in dry-run")
+
+    monkeypatch.setattr(cli, "require_ffmpeg", boom)
+    monkeypatch.setattr(cli, "process_one", boom)
+
+    rc = cli.main(["--dry-run", str(src)])
+    assert rc == 0
+
+
+def test_dry_run_multiple_files(tmp_path, capsys):
+    files = [tmp_path / f"ch{i:02d}.mp3" for i in range(3)]
+    for f in files:
+        f.write_bytes(b"fake")
+    rc = cli.main(["--dry-run"] + [str(f) for f in files])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert out.count("would fix:") == 3
+
+
+def test_dry_run_mixed_present_and_missing_returns_2(tmp_path, capsys):
+    present = tmp_path / "ch01.mp3"
+    present.write_bytes(b"fake")
+    rc = cli.main(["--dry-run", str(present), str(tmp_path / "missing.mp3")])
+    assert rc == 2
+    out = capsys.readouterr().out
+    assert "would fix:" in out
