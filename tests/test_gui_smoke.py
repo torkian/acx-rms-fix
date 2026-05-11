@@ -37,6 +37,25 @@ def test_report_default_filename_format():
     assert name_json.endswith(".json")
 
 
+def test_gui_version_flag(monkeypatch, capsys):
+    """acx-rms-fix-gui --version prints the version string and exits 0."""
+    import sys
+
+    try:
+        from acx_rms_fix import gui
+    except ImportError as exc:
+        pytest.skip(f"tkinter not available: {exc}")
+
+    from acx_rms_fix import __version__
+
+    monkeypatch.setattr(sys, "argv", ["acx-rms-fix-gui", "--version"])
+    with pytest.raises(SystemExit) as exc_info:
+        gui.main()
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert __version__ in out
+
+
 def test_gui_module_imports():
     """Module must at least be importable — catches syntax / import errors."""
     try:

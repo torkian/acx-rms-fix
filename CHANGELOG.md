@@ -5,6 +5,7 @@ All notable changes to `acx-rms-fix` are documented here. Format loosely based o
 ## [Unreleased]
 
 ### Added
+- **`-V/--version` flag for the GUI entry point** — `acx-rms-fix-gui --version` now prints the version string and exits 0, matching the behaviour already present in the `acx-rms-fix` CLI.
 - **`--json-lines` CLI flag** — prints each file result as a compact JSON object on its own line to stdout, one per file, as it completes. Suppresses the normal coloured output so the stream is machine-readable. Useful for piping to `jq` or other tools (e.g. `acx-rms-fix --json-lines --check *.mp3 | jq '.passed'`). Implemented in `report.to_jsonl_line()` and wired into `cli.main()`.
 - GUI: timestamped Save-report filename** — the "Save report…" dialog now pre-fills the filename as `acx-rms-fix-report-YYYY-MM-DDTHH-MM-SS.md` instead of the static `acx-rms-fix-report.md`, preventing accidental overwrites when multiple runs are saved to the same folder.
 - Code signing (Apple Developer + Windows EV cert) so first-run warnings go away.

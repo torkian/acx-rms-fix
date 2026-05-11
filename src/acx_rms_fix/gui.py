@@ -481,6 +481,12 @@ def main() -> int:
         description="acx-rms-fix GUI (Tkinter).",
     )
     parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    parser.add_argument(
         "--selftest",
         action="store_true",
         help="run a headless round-trip test against the bundled ffmpeg and exit",
