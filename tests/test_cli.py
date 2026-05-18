@@ -115,3 +115,55 @@ def test_main_ffmpeg_missing_returns_1(monkeypatch, capsys):
     assert rc == 1
     err = capsys.readouterr().err
     assert "no ffmpeg" in err
+
+
+def test_parser_accepts_dry_run_flag():
+    ns = cli.build_parser().parse_args(["--dry-run", "a.mp3"])
+    assert ns.dry_run is True
+
+
+def test_dry_run_exits_zero_without_ffmpeg(tmp_path, capsys):
+    """--dry-run must not call ffmpeg and must exit 0 even for missing files."""
+    rc = cli.main(["--dry-run", str(tmp_path / "nonexistent.mp3")])
+    assert rc == 0
+
+
+def test_dry_run_shows_would_write(tmp_path, capsys):
+    out_dir = tmp_path / "out"
+    rc = cli.main(["--dry-run", "-o", str(out_dir), str(tmp_path / "ch01.mp3")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "would write" in out
+    assert "ch01_ACX.mp3" in out
+
+
+def test_dry_run_shows_would_check(tmp_path, capsys):
+    rc = cli.main(["--dry-run", "--check", str(tmp_path / "ch01.mp3")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "would check" in out
+
+
+def test_dry_run_shows_would_replace(tmp_path, capsys):
+    rc = cli.main(["--dry-run", "--replace", str(tmp_path / "ch01.mp3")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "would replace" in out
+    assert ".orig.mp3" in out
+
+
+def test_dry_run_multiple_files(tmp_path, capsys):
+    files = [str(tmp_path / f"ch0{i}.mp3") for i in range(1, 4)]
+    rc = cli.main(["--dry-run"] + files)
+    assert rc == 0
+    lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()]
+    assert len(lines) == 3
+
+
+def test_dry_run_default_output_alongside_input(tmp_path, capsys):
+    rc = cli.main(["--dry-run", str(tmp_path / "ch01.mp3")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    # without -o, output sits next to the input
+    assert str(tmp_path) in out
+    assert "ch01_ACX.mp3" in out
