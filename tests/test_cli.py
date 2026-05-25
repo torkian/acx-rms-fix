@@ -115,3 +115,105 @@ def test_main_ffmpeg_missing_returns_1(monkeypatch, capsys):
     assert rc == 1
     err = capsys.readouterr().err
     assert "no ffmpeg" in err
+
+
+# --------------- --dry-run tests ---------------
+
+
+def test_parser_accepts_dry_run_flag():
+    ns = cli.build_parser().parse_args(["--dry-run", "a.mp3"])
+    assert ns.dry_run is True
+
+
+def test_dry_run_does_not_call_ffmpeg(monkeypatch, tmp_path, capsys):
+    """--dry-run must exit without ever calling require_ffmpeg or process_one."""
+    called = {"ffmpeg": False, "process": False}
+
+    def fake_require():
+        called["ffmpeg"] = True
+        return "fake"
+
+    def fake_process(*a, **kw):
+        called["process"] = True
+
+    monkeypatch.setattr(cli, "require_ffmpeg", fake_require)
+    monkeypatch.setattr(cli, "process_one", fake_process)
+
+    f = tmp_path / "chapter01.mp3"
+    f.write_bytes(b"fake")
+
+    rc = cli.main(["--dry-run", str(f)])
+    assert rc == 0
+    assert not called["ffmpeg"], "require_ffmpeg should not be called in dry-run mode"
+    assert not called["process"], "process_one should not be called in dry-run mode"
+
+
+def test_dry_run_shows_fix_action_and_output_path(tmp_path, capsys):
+    """Default (fix) mode should show 'fix' and the _ACX.mp3 would-be output."""
+    f = tmp_path / "chapter01.mp3"
+    f.write_bytes(b"fake")
+
+    rc = cli.main(["--dry-run", str(f)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "fix" in out
+    assert "chapter01_ACX.mp3" in out
+
+
+def test_dry_run_with_out_dir_shows_correct_output_path(tmp_path, capsys):
+    """With -o, the would-be output path should include the out_dir."""
+    f = tmp_path / "chapter02.mp3"
+    f.write_bytes(b"fake")
+    out_dir = tmp_path / "mastered"
+
+    rc = cli.main(["--dry-run", "-o", str(out_dir), str(f)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "chapter02_ACX.mp3" in out
+    assert str(out_dir) in out
+
+
+def test_dry_run_with_check_flag_shows_check_action(tmp_path, capsys):
+    """--dry-run --check should show 'check' (no output path line)."""
+    f = tmp_path / "already_good.mp3"
+    f.write_bytes(b"fake")
+
+    rc = cli.main(["--dry-run", "--check", str(f)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "check" in out
+    assert "_ACX.mp3" not in out
+
+
+def test_dry_run_with_replace_flag_shows_replace_and_backup(tmp_path, capsys):
+    """--dry-run --replace should show 'replace' and the backup filename."""
+    f = tmp_path / "chapter03.mp3"
+    f.write_bytes(b"fake")
+
+    rc = cli.main(["--dry-run", "--replace", str(f)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "replace" in out
+    assert "chapter03.orig.mp3" in out
+
+
+def test_dry_run_missing_file_shows_missing(tmp_path, capsys):
+    """Missing files should be reported (not crash) and found count reflects only existing."""
+    rc = cli.main(["--dry-run", str(tmp_path / "ghost.mp3")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "missing" in out
+    assert "0/1" in out
+
+
+def test_dry_run_summary_line_shows_found_count(tmp_path, capsys):
+    """Summary line should show N/total count."""
+    f1 = tmp_path / "a.mp3"
+    f1.write_bytes(b"fake")
+    f2 = tmp_path / "b.mp3"
+    f2.write_bytes(b"fake")
+
+    rc = cli.main(["--dry-run", str(f1), str(f2), str(tmp_path / "missing.mp3")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "2/3" in out

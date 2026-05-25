@@ -156,6 +156,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "print what would be done for each input file without invoking ffmpeg; "
+            "shows the action (fix/replace/check) and the would-be output path"
+        ),
+    )
+    p.add_argument(
         "-V",
         "--version",
         action="version",
@@ -167,8 +175,39 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------- main ----------------
 
 
+def _compute_output_path(input_path: Path, out_dir: Path | None, replace: bool) -> str:
+    """Return the would-be output path string for a given input (mirrors process_one logic)."""
+    if replace:
+        return str(input_path)
+    if out_dir is not None:
+        return str(out_dir / f"{input_path.stem}_ACX.mp3")
+    return str(input_path.parent / f"{input_path.stem}_ACX.mp3")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # --dry-run: show what would happen without calling ffmpeg at all.
+    if args.dry_run:
+        found = 0
+        for raw in args.inputs:
+            path = Path(raw)
+            if not path.is_file():
+                print(yellow(f"  missing  {path}"))
+                continue
+            found += 1
+            if args.check:
+                print(f"  check    {path}")
+            elif args.replace:
+                backup = path.with_suffix(f".orig{path.suffix}")
+                print(f"  replace  {path}")
+                print(dim(f"           backup → {backup.name}"))
+            else:
+                out_path = _compute_output_path(path, args.out_dir, replace=False)
+                print(f"  fix      {path}")
+                print(dim(f"           → {out_path}"))
+        print(dim(f"dry-run: {found}/{len(args.inputs)} file(s) would be processed"))
+        return 0
 
     try:
         ffmpeg_version = require_ffmpeg()

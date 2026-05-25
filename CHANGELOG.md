@@ -7,6 +7,7 @@ All notable changes to `acx-rms-fix` are documented here. Format loosely based o
 ### Added
 - **`--json-lines` CLI flag** — prints each file result as a compact JSON object on its own line to stdout, one per file, as it completes. Suppresses the normal coloured output so the stream is machine-readable. Useful for piping to `jq` or other tools (e.g. `acx-rms-fix --json-lines --check *.mp3 | jq '.passed'`). Implemented in `report.to_jsonl_line()` and wired into `cli.main()`.
 - GUI: timestamped Save-report filename** — the "Save report…" dialog now pre-fills the filename as `acx-rms-fix-report-YYYY-MM-DDTHH-MM-SS.md` instead of the static `acx-rms-fix-report.md`, preventing accidental overwrites when multiple runs are saved to the same folder.
+- **`--dry-run` CLI flag** — prints what would be done for each input (action, would-be output path) without invoking ffmpeg at all. Safe to run anywhere: no audio is processed, no files are written, and ffmpeg does not need to be on PATH. Useful for confirming batch-command arguments before a long encode. Works alongside `--check`, `--replace`, and `-o`.
 - Code signing (Apple Developer + Windows EV cert) so first-run warnings go away.
 - macOS Intel standalone binary.
 - Linux `.AppImage`.
