@@ -115,3 +115,59 @@ def test_main_ffmpeg_missing_returns_1(monkeypatch, capsys):
     assert rc == 1
     err = capsys.readouterr().err
     assert "no ffmpeg" in err
+
+
+def test_dry_run_exits_zero_without_ffmpeg(tmp_path, capsys):
+    """--dry-run exits 0 and never invokes ffmpeg."""
+    f = tmp_path / "chapter.mp3"
+    f.touch()
+    rc = cli.main(["--dry-run", str(f)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "chapter.mp3" in out
+    assert "1 file(s) would be processed" in out
+
+
+def test_dry_run_multiple_files(tmp_path, capsys):
+    """--dry-run lists every input file."""
+    files = [tmp_path / f"ch{i}.mp3" for i in range(3)]
+    for f in files:
+        f.touch()
+    paths = [str(f) for f in files]
+    rc = cli.main(["--dry-run"] + paths)
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "3 file(s) would be processed" in out
+
+
+def test_dry_run_check_mode_label(tmp_path, capsys):
+    """--dry-run --check shows 'check' in the action line."""
+    f = tmp_path / "audio.mp3"
+    f.touch()
+    rc = cli.main(["--dry-run", "--check", str(f)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "check" in out
+
+
+def test_dry_run_replace_mode_label(tmp_path, capsys):
+    """--dry-run --replace shows replace intent."""
+    f = tmp_path / "audio.mp3"
+    f.touch()
+    rc = cli.main(["--dry-run", "--replace", str(f)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "replace" in out
+
+
+def test_dry_run_nonexistent_file_still_exits_zero(tmp_path, capsys):
+    """--dry-run with a missing file still exits 0 — it only previews, not validates."""
+    rc = cli.main(["--dry-run", str(tmp_path / "ghost.mp3")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "ghost.mp3" in out
+
+
+def test_parser_accepts_dry_run_flag():
+    ns = cli.build_parser().parse_args(["--dry-run", "a.mp3"])
+    assert ns.dry_run is True

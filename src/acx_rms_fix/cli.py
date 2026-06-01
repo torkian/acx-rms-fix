@@ -156,6 +156,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "show what would be processed without running ffmpeg; "
+            "prints the resolved input paths and intended actions, then exits 0"
+        ),
+    )
+    p.add_argument(
         "-V",
         "--version",
         action="version",
@@ -164,11 +172,38 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+# ---------------- dry-run ----------------
+
+
+def _dry_run(args) -> int:
+    """Print what would be processed and exit without invoking ffmpeg."""
+    if args.check:
+        action = "check (measure only)"
+    elif args.replace:
+        action = "master → replace in-place (*.orig.* backup)"
+    elif args.out_dir:
+        action = f"master → {args.out_dir}"
+    else:
+        action = "master → alongside input"
+
+    print(dim(f"dry-run — {action}"))
+    for raw in args.inputs:
+        path = Path(raw)
+        exists = path.exists()
+        marker = green("✓") if exists else yellow("?")
+        print(f"  {marker}  {path}")
+    print(dim(f"{len(args.inputs)} file(s) would be processed"))
+    return 0
+
+
 # ---------------- main ----------------
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.dry_run:
+        return _dry_run(args)
 
     try:
         ffmpeg_version = require_ffmpeg()
