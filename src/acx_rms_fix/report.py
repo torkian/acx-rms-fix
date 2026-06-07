@@ -14,6 +14,16 @@ from .core import (
 )
 
 
+def _md_db(v: float | None) -> str:
+    if v is None:
+        return "—"
+    if v == float("-inf"):
+        return "−inf"
+    if v == float("inf"):
+        return "+inf"
+    return f"{v:.1f} dB"
+
+
 def to_json(report: RunReport) -> str:
     return json.dumps(
         {
@@ -59,24 +69,26 @@ def to_markdown(report: RunReport) -> str:
     lines.append("")
     lines.append("## Per-file results")
     lines.append("")
-    lines.append("| File | Action | RMS before | RMS after | Peak after | Noise floor | Result |")
+    lines.append(
+        "| File | Action | RMS after | True-peak after | Noise floor after | Format | Result |"
+    )
     lines.append("|---|---|---|---|---|---|---|")
     for r in report.results:
-        rms_before = (
-            f"{r.before.rms_db:.1f} dB" if r.before and r.before.rms_db is not None else "—"
-        )
-        rms_after = f"{r.after.rms_db:.1f} dB" if r.after and r.after.rms_db is not None else "—"
-        peak_after = f"{r.after.peak_db:.1f} dB" if r.after and r.after.peak_db is not None else "—"
-        if r.after is None:
+        a = r.after
+        rms_after = _md_db(a.rms_db) if a else "—"
+        peak_after = _md_db(a.peak_db) if a else "—"
+        if a is None:
             nf_cell = "—"
+            fmt_cell = "—"
         else:
-            nf_cell = "✓" if r.after.noise_floor_ok else "✗"
+            nf_cell = f"{_md_db(a.noise_floor_db)} {'✓' if a.noise_ok else '✗'}"
+            fmt_cell = "✓" if a.format_ok else "✗"
         status = "✅ PASS" if r.passed else "❌ FAIL"
         if r.error:
             status = f"❌ ERROR: {r.error}"
         lines.append(
             f"| `{Path(r.input_path).name}` | {r.action} "
-            f"| {rms_before} | {rms_after} | {peak_after} | {nf_cell} | {status} |"
+            f"| {rms_after} | {peak_after} | {nf_cell} | {fmt_cell} | {status} |"
         )
     lines.append("")
     if report.fail_count == 0 and report.results:

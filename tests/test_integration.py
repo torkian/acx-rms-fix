@@ -55,7 +55,7 @@ def test_noisy_input_has_noise_floor_pushed_below_minus_60(tmp_path: Path):
     core.master(src, out)
 
     m = core.measure(out)
-    assert m.noise_floor_ok, "noise floor should be pushed under -60 dB by afftdn"
+    assert m.noise_ok, "noise floor should be pushed under -60 dB by afftdn"
 
 
 @requires_ffmpeg
@@ -69,7 +69,7 @@ def test_process_one_end_to_end_passes_check_afterwards(tmp_path: Path):
     assert result.after.passes, (
         f"process_one output did not pass ACX: "
         f"rms={result.after.rms_db} peak={result.after.peak_db} "
-        f"nf_ok={result.after.noise_floor_ok}"
+        f"nf_ok={result.after.noise_ok}"
     )
 
 
@@ -102,7 +102,7 @@ def test_mp3_input_round_trip_passes_acx(tmp_path: Path):
     assert after.peak_db <= core.PEAK_MAX, (
         f"MP3-in round trip peak {after.peak_db} exceeds {core.PEAK_MAX}"
     )
-    assert after.noise_floor_ok, "MP3-in round trip noise floor not below -60 dB"
+    assert after.noise_ok, "MP3-in round trip noise floor not below -60 dB"
 
 
 @requires_ffmpeg

@@ -5,8 +5,6 @@ All notable changes to `acx-rms-fix` are documented here. Format loosely based o
 ## [Unreleased]
 
 ### Added
-- **`--json-lines` CLI flag** — prints each file result as a compact JSON object on its own line to stdout, one per file, as it completes. Suppresses the normal coloured output so the stream is machine-readable. Useful for piping to `jq` or other tools (e.g. `acx-rms-fix --json-lines --check *.mp3 | jq '.passed'`). Implemented in `report.to_jsonl_line()` and wired into `cli.main()`.
-- GUI: timestamped Save-report filename** — the "Save report…" dialog now pre-fills the filename as `acx-rms-fix-report-YYYY-MM-DDTHH-MM-SS.md` instead of the static `acx-rms-fix-report.md`, preventing accidental overwrites when multiple runs are saved to the same folder.
 - Code signing (Apple Developer + Windows EV cert) so first-run warnings go away.
 - macOS Intel standalone binary.
 - Linux `.AppImage`.
@@ -16,6 +14,37 @@ All notable changes to `acx-rms-fix` are documented here. Format loosely based o
 - Drag-and-drop in the GUI.
 - Homebrew tap.
 - Real screenshots in `docs/`.
+
+---
+
+## [0.1.4] — accurate verification
+
+This release closes gaps in the **verification** step where a file could be
+reported "ACX-compliant" while still being rejected by ACX. The mastering
+chain is unchanged; what a green check *means* is now correct.
+
+### Fixed
+- **Noise-floor check now reports a real measured value.** The old check passed if *any* ≥0.2 s passage dipped below -60 dB — proving a quiet gap *existed*, not that the floor was clean — so it conveyed no actual number and failed clean material that has no distinct gap. It now reports the file's **measured noise floor** (ffmpeg `astats`) and checks it against -60 dBFS. As with ACX itself, the floor is judged from the quiet passages, so a file whose pauses are hard-edited to digital silence reads its floor from that silence. (Robust CBR detection and percentile-of-room-tone measurement remain follow-ups — see Known limitations.)
+- **Peak check used decoded sample peak, not true peak.** ACX's peak rule is inter-sample aware; a file under -3 dBFS sample-peak can reconstruct above -3 dBFS. Peak is now the **true (inter-sample) peak** from ffmpeg `ebur128`.
+- **`--check` ignored four of ACX's eight requirements.** Codec, sample rate, channel count, and bitrate were never verified, so a 48 kHz stereo WAV with acceptable loudness reported as compliant. Format is now part of the pass criteria.
+- **`--replace` corrupted non-MP3 inputs.** Replacing `chapter.wav` in place wrote MP3 bytes into a file still named `.wav`. Non-MP3 inputs now get a sibling `<stem>.mp3` and the original is left untouched.
+- **Batch runs could silently overwrite outputs.** Two inputs sharing a stem (e.g. `a/ch1.wav` and `b/ch1.wav`) into one `-o` folder both mapped to `ch1_ACX.mp3`; the run now aborts before doing any work and lists the collision.
+- **Interrupted encodes left truncated files.** Output is now written to a temp file and atomically renamed on success, so a failed/interrupted run never leaves a partial MP3 (or clobbers a good one).
+
+### Added
+- **`--dry-run` CLI flag** — preview which files would be mastered and where, without encoding anything. Combine with `--replace` to preview an in-place run.
+- **`-V` / `--version` for the GUI entry point** (`acx-rms-fix-gui --version`).
+- **`--json-lines` CLI flag** — prints each file result as a compact JSON object on its own line to stdout as it completes; suppresses coloured output for machine consumption (e.g. `acx-rms-fix --json-lines --check *.mp3 | jq '.passed'`).
+- **GUI: timestamped Save-report filename** — the "Save report…" dialog pre-fills `acx-rms-fix-report-YYYY-MM-DDTHH-MM-SS.md`, preventing accidental overwrites.
+- Reports and JSON now include the measured noise-floor dB, true peak, sample peak, and detected format, plus `noise_ok` / `format_ok` flags.
+
+### Changed
+- **`--replace` and `--check` are now mutually exclusive** (argparse rejects the combination instead of silently letting `--check` win).
+- Measurement now runs ffmpeg `astats` + `ebur128` (true peak, noise floor, format banner) in place of `volumedetect` + `silencedetect`.
+
+### Known limitations
+- **CBR is not verified.** The format check confirms codec (MP3), 44.1 kHz, mono, and ~192 kbps, but does not distinguish CBR from a VBR file averaging ~192 kbps. The tool's own output is always 192 kbps CBR.
+- **Noise floor is judged from the quiet passages** (ffmpeg `astats`); a percentile-of-room-tone estimate that better separates hiss from hard-edited silence is a follow-up.
 
 ---
 

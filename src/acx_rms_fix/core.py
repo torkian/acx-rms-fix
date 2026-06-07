@@ -9,6 +9,7 @@ It raises exceptions on failure and returns dataclasses on success.
 from __future__ import annotations
 
 import json
+import math
 import os
 import platform
 import re
@@ -59,11 +60,26 @@ DENOISE_NF = -50
 # ---------------- dataclasses ----------------
 
 
+# Tolerance (in kbps) around the 192 kbps target when verifying bitrate.
+# ffmpeg reports our CBR output as exactly "192 kb/s"; the band leaves a
+# little slack for containers that round the reported average.
+BITRATE_TOLERANCE = 8
+
+
 @dataclass
 class Measurement:
+    # `rms_db` is the integrated/overall RMS level (ffmpeg astats "RMS level"),
+    # which is the quantity ACX's RMS check measures. `peak_db` is the TRUE
+    # (inter-sample) peak from ffmpeg ebur128 — the value ACX's peak check uses —
+    # not the decoded sample peak. `noise_floor_db` is the measured noise floor.
     rms_db: float | None = None
     peak_db: float | None = None
-    noise_floor_ok: bool = False
+    noise_floor_db: float | None = None
+    sample_peak_db: float | None = None  # informational: decoded sample peak
+    codec: str | None = None
+    sample_rate: int | None = None
+    channels: int | None = None
+    bitrate_kbps: int | None = None
 
     @property
     def rms_ok(self) -> bool:
@@ -74,8 +90,24 @@ class Measurement:
         return self.peak_db is not None and self.peak_db <= PEAK_MAX
 
     @property
+    def noise_ok(self) -> bool:
+        return self.noise_floor_db is not None and self.noise_floor_db <= NOISE_MAX
+
+    @property
+    def format_ok(self) -> bool:
+        """True only if codec/sample-rate/channels/bitrate all match ACX spec."""
+        return (
+            self.codec is not None
+            and self.codec.startswith("mp3")
+            and self.sample_rate == SAMPLE_RATE
+            and self.channels == CHANNELS
+            and self.bitrate_kbps is not None
+            and abs(self.bitrate_kbps - int(BITRATE.rstrip("k"))) <= BITRATE_TOLERANCE
+        )
+
+    @property
     def passes(self) -> bool:
-        return self.rms_ok and self.peak_ok and self.noise_floor_ok
+        return self.rms_ok and self.peak_ok and self.noise_ok and self.format_ok
 
 
 @dataclass
@@ -97,6 +129,13 @@ class FileResult:
                 orig = getattr(self, key)
                 m["rms_ok"] = orig.rms_ok
                 m["peak_ok"] = orig.peak_ok
+                m["noise_ok"] = orig.noise_ok
+                m["format_ok"] = orig.format_ok
+                # JSON has no Infinity/NaN. Digital silence yields -inf; null it
+                # so the report stays valid JSON for strict parsers (jq, etc.).
+                for k, v in m.items():
+                    if isinstance(v, float) and not math.isfinite(v):
+                        m[k] = None
         return d
 
 
@@ -199,47 +238,102 @@ def _run_ffmpeg(args: list[str]) -> subprocess.CompletedProcess:
     )
 
 
-def measure_volume(path: Path) -> tuple[float, float]:
-    """Return (mean_volume_db, max_volume_db) from ffmpeg volumedetect."""
-    cp = _run_ffmpeg(
-        [
-            "-i",
-            str(path),
-            "-filter:a",
-            "volumedetect",
-            "-f",
-            "null",
-            _devnull(),
-        ]
-    )
-    out = cp.stderr + cp.stdout
-    mean_m = re.search(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB", out)
-    max_m = re.search(r"max_volume:\s*(-?\d+(?:\.\d+)?)\s*dB", out)
-    if not mean_m or not max_m:
-        raise RuntimeError(f"could not measure volume of {path}")
-    return float(mean_m.group(1)), float(max_m.group(1))
+# ffmpeg prints dB metrics as a signed number, or "inf"/"-inf"/"nan" for
+# digital silence and degenerate input.
+_DB_NUM = r"(-?(?:\d+(?:\.\d+)?|inf|nan))"
 
 
-def noise_floor_ok(path: Path) -> bool:
-    """True if any ≥0.2 s passage sits below -60 dB."""
-    cp = _run_ffmpeg(
-        [
-            "-i",
-            str(path),
-            "-af",
-            "silencedetect=noise=-60dB:d=0.2",
-            "-f",
-            "null",
-            _devnull(),
-        ]
-    )
+def _to_db(token: str) -> float:
+    t = token.strip().lower()
+    if t in ("inf", "+inf"):
+        return float("inf")
+    if t == "-inf" or "nan" in t:
+        # Digital silence / undefined — treat as "infinitely quiet" so a silent
+        # passage never trips the noise-floor or RMS thresholds.
+        return float("-inf")
+    return float(t)
+
+
+def _parse_stream_info(text: str) -> dict:
+    """Pull codec / sample-rate / channels / bitrate from an ffmpeg input banner."""
+    info: dict = {"codec": None, "sample_rate": None, "channels": None, "bitrate_kbps": None}
+    line_m = re.search(r"Stream #[^\n]*Audio:[^\n]*", text)
+    if not line_m:
+        return info
+    line = line_m.group(0)
+    codec_m = re.search(r"Audio:\s*([A-Za-z0-9_]+)", line)
+    if codec_m:
+        info["codec"] = codec_m.group(1)
+    sr_m = re.search(r"(\d+)\s*Hz", line)
+    if sr_m:
+        info["sample_rate"] = int(sr_m.group(1))
+    if re.search(r"\bmono\b", line):
+        info["channels"] = 1
+    elif re.search(r"\bstereo\b", line):
+        info["channels"] = 2
+    else:
+        ch_m = re.search(r"(\d+)\s*channels", line)
+        if ch_m:
+            info["channels"] = int(ch_m.group(1))
+    br_m = re.search(r"(\d+)\s*kb/s", line)
+    if br_m:
+        info["bitrate_kbps"] = int(br_m.group(1))
+    return info
+
+
+def _measure_astats(path: Path) -> tuple[float, float, float, dict]:
+    """
+    Return (rms_db, sample_peak_db, noise_floor_db, stream_info) via ffmpeg
+    `astats`. Each metric is taken from the *last* occurrence in the output,
+    which is the "Overall" block — correct for both mono and multi-channel input.
+
+    Unlike the old `silencedetect` heuristic (which only proved a quiet gap
+    existed), `astats` reports the file's actual measured noise floor.
+    """
+    cp = _run_ffmpeg(["-i", str(path), "-af", "astats=metadata=0", "-f", "null", _devnull()])
     out = cp.stderr + cp.stdout
-    return "silence_start" in out
+    if cp.returncode != 0:
+        last = cp.stderr.strip().splitlines()[-1] if cp.stderr.strip() else "unknown"
+        raise RuntimeError(f"could not measure {path}: {last}")
+    rms = re.findall(rf"RMS level dB:\s*{_DB_NUM}", out)
+    peak = re.findall(rf"Peak level dB:\s*{_DB_NUM}", out)
+    floor = re.findall(rf"Noise floor dB:\s*{_DB_NUM}", out)
+    if not rms or not peak or not floor:
+        raise RuntimeError(f"could not parse astats output for {path}")
+    return _to_db(rms[-1]), _to_db(peak[-1]), _to_db(floor[-1]), _parse_stream_info(out)
+
+
+def _measure_true_peak(path: Path) -> float:
+    """Return the true (inter-sample) peak in dBFS via ffmpeg `ebur128`.
+
+    ACX's peak check is true-peak aware; the decoded sample peak (astats
+    "Peak level") can read several dB lower than the real reconstructed peak.
+    """
+    cp = _run_ffmpeg(["-i", str(path), "-af", "ebur128=peak=true", "-f", "null", _devnull()])
+    out = cp.stderr + cp.stdout
+    if cp.returncode != 0:
+        last = cp.stderr.strip().splitlines()[-1] if cp.stderr.strip() else "unknown"
+        raise RuntimeError(f"could not measure true peak of {path}: {last}")
+    m = re.search(rf"True peak:\s*Peak:\s*{_DB_NUM}\s*dBFS", out)
+    if not m:
+        raise RuntimeError(f"could not parse ebur128 true-peak output for {path}")
+    return _to_db(m.group(1))
 
 
 def measure(path: Path) -> Measurement:
-    mean, peak = measure_volume(path)
-    return Measurement(rms_db=mean, peak_db=peak, noise_floor_ok=noise_floor_ok(path))
+    """Measure all ACX-relevant metrics: RMS, true peak, noise floor, and format."""
+    rms_db, sample_peak_db, noise_floor_db, info = _measure_astats(path)
+    true_peak_db = _measure_true_peak(path)
+    return Measurement(
+        rms_db=rms_db,
+        peak_db=true_peak_db,
+        noise_floor_db=noise_floor_db,
+        sample_peak_db=sample_peak_db,
+        codec=info["codec"],
+        sample_rate=info["sample_rate"],
+        channels=info["channels"],
+        bitrate_kbps=info["bitrate_kbps"],
+    )
 
 
 # ---------------- mastering ----------------
@@ -331,6 +425,43 @@ def master(input_path: Path, output_path: Path) -> None:
         raise RuntimeError(f"loudnorm pass 2 encode failed: {last}")
 
 
+def _master_atomic(input_path: Path, output_path: Path) -> None:
+    """
+    Master `input_path` to `output_path`, writing through a temp file in the
+    destination directory and renaming on success. An interrupted or failed
+    encode therefore never leaves a truncated MP3 at `output_path` (and never
+    clobbers a good file already there).
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_fd, tmp_name = tempfile.mkstemp(
+        prefix="acxrmsfix_", suffix=".mp3", dir=str(output_path.parent)
+    )
+    os.close(tmp_fd)
+    tmp_out = Path(tmp_name)
+    try:
+        master(input_path, tmp_out)
+        os.replace(str(tmp_out), str(output_path))  # atomic within one filesystem
+    finally:
+        if tmp_out.exists():
+            try:
+                tmp_out.unlink()
+            except OSError:
+                pass
+
+
+def planned_output(input_path: Path, out_dir: Path | None, replace: bool) -> Path:
+    """Where process_one would write the mastered MP3 for these options.
+
+    Output is always an MP3. Replace is only truly in-place for MP3 input;
+    other formats fall back to the standard `<stem>_ACX.mp3` sibling so MP3
+    bytes never overwrite a `.wav`/`.flac` container or an unrelated file.
+    """
+    if replace and input_path.suffix.lower() == ".mp3":
+        return input_path
+    base = out_dir if out_dir is not None else input_path.parent
+    return base / f"{input_path.stem}_ACX.mp3"
+
+
 # ---------------- per-file orchestration ----------------
 
 ProgressFn = Callable[[str], None]
@@ -342,6 +473,7 @@ def process_one(
     out_dir: Path | None = None,
     replace: bool = False,
     check_only: bool = False,
+    dry_run: bool = False,
     on_progress: ProgressFn | None = None,
 ) -> FileResult:
     """
@@ -357,11 +489,10 @@ def process_one(
             on_progress(msg)
 
     t0 = datetime.now(timezone.utc)
-    result = FileResult(
-        input_path=str(input_path),
-        output_path=None,
-        action="check" if check_only else ("replace" if replace else "fix"),
+    action = (
+        "check" if check_only else ("dry-run" if dry_run else ("replace" if replace else "fix"))
     )
+    result = FileResult(input_path=str(input_path), output_path=None, action=action)
 
     if not input_path.is_file():
         result.error = "input not found"
@@ -379,39 +510,44 @@ def process_one(
             result.duration_seconds = (datetime.now(timezone.utc) - t0).total_seconds()
             return result
 
+        if dry_run:
+            emit(f"dry-run: {input_path}")
+            m = measure(input_path)
+            result.before = m
+            result.passed = m.passes
+            planned = planned_output(input_path, out_dir, replace)
+            result.output_path = str(planned)
+            # A real run always re-masters; it never skips compliant files. Say so.
+            note = " (already compliant)" if m.passes else ""
+            emit(f"  would write: {planned}{note}")
+            result.duration_seconds = (datetime.now(timezone.utc) - t0).total_seconds()
+            return result
+
         result.before = measure(input_path)
         emit(f"fix:   {input_path}")
         emit("  pass 1: analyzing loudness...")
 
-        if replace:
-            backup = input_path.with_suffix(f".orig{input_path.suffix}")
+        if replace and input_path.suffix.lower() == ".mp3":
+            backup = input_path.with_suffix(".orig.mp3")
             if not backup.exists():
                 shutil.copy2(input_path, backup)
-            tmp_fd, tmp_name = tempfile.mkstemp(
-                prefix="acxrmsfix_", suffix=".mp3", dir=str(input_path.parent)
-            )
-            os.close(tmp_fd)
-            tmp_out = Path(tmp_name)
-            try:
-                emit("  pass 2: normalizing + limiting + encoding...")
-                master(input_path, tmp_out)
-                shutil.move(str(tmp_out), str(input_path))
-            finally:
-                if tmp_out.exists():
-                    try:
-                        tmp_out.unlink()
-                    except OSError:
-                        pass
+            emit("  pass 2: normalizing + limiting + encoding...")
+            _master_atomic(input_path, input_path)
             result.output_path = str(input_path)
             emit(f"  replaced in place (backup: {backup.name})")
-        else:
-            if out_dir is not None:
-                out_dir.mkdir(parents=True, exist_ok=True)
-                out_path = out_dir / f"{input_path.stem}_ACX.mp3"
-            else:
-                out_path = input_path.parent / f"{input_path.stem}_ACX.mp3"
+        elif replace:
+            # Replace is meaningful only for MP3 input. For other formats, fall
+            # back to the standard <stem>_ACX.mp3 sibling — never overwrite the
+            # original container or an unrelated file — and keep the original.
+            out_path = planned_output(input_path, out_dir, replace=True)
             emit("  pass 2: normalizing + limiting + encoding...")
-            master(input_path, out_path)
+            _master_atomic(input_path, out_path)
+            result.output_path = str(out_path)
+            emit(f"  --replace applies to MP3 only; wrote {out_path.name} (original kept)")
+        else:
+            out_path = planned_output(input_path, out_dir, replace=False)
+            emit("  pass 2: normalizing + limiting + encoding...")
+            _master_atomic(input_path, out_path)
             result.output_path = str(out_path)
             emit(f"  wrote: {out_path}")
 

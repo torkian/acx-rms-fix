@@ -98,8 +98,10 @@ def _status_for(result: FileResult, m: Measurement | None) -> str:
         reasons.append(f"RMS {m.rms_db:.1f}" if m.rms_db is not None else "RMS ?")
     if not m.peak_ok:
         reasons.append(f"peak {m.peak_db:.1f}" if m.peak_db is not None else "peak ?")
-    if not m.noise_floor_ok:
+    if not m.noise_ok:
         reasons.append("noise floor")
+    if not m.format_ok:
+        reasons.append("format")
     return "❌ FAIL " + " · ".join(reasons) if reasons else "❌ FAIL"
 
 
@@ -458,9 +460,12 @@ def _run_selftest() -> int:
             return 1
 
         m = measure(out)
-        print(f"output RMS:  {m.rms_db:.1f} dB  (target {RMS_MIN}..{RMS_MAX})")
-        print(f"output peak: {m.peak_db:.1f} dB  (max {PEAK_MAX})")
-        print(f"noise floor ok: {m.noise_floor_ok}")
+        print(f"output RMS:       {m.rms_db:.1f} dB  (target {RMS_MIN}..{RMS_MAX})")
+        print(f"output true-peak: {m.peak_db:.1f} dB  (max {PEAK_MAX})")
+        print(f"noise floor:      {m.noise_floor_db:.1f} dB  (ok={m.noise_ok})")
+        print(
+            f"format:           {m.codec} {m.sample_rate} Hz {m.channels}ch {m.bitrate_kbps}k (ok={m.format_ok})"
+        )
 
         if not m.passes:
             print("FAIL  output did not meet ACX spec")
@@ -479,6 +484,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         prog="acx-rms-fix-gui",
         description="acx-rms-fix GUI (Tkinter).",
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
         "--selftest",
