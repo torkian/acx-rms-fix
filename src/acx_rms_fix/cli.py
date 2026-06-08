@@ -156,6 +156,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "print what would be done for each input file without calling ffmpeg; always exits 0"
+        ),
+    )
+    p.add_argument(
         "-V",
         "--version",
         action="version",
@@ -167,8 +174,35 @@ def build_parser() -> argparse.ArgumentParser:
 # ---------------- main ----------------
 
 
+def _dry_run_plan(args) -> int:
+    """Print what would happen for each input and return 0 without touching ffmpeg."""
+    for raw in args.inputs:
+        path = Path(raw)
+        if args.check:
+            action = "check"
+            dest = str(path)
+        elif args.replace:
+            action = "replace"
+            dest = str(path)
+            backup = str(path.with_suffix(f".orig{path.suffix}"))
+            print(f"dry-run: {action}  {path}  (backup → {backup})")
+            continue
+        else:
+            action = "fix"
+            out_dir = args.out_dir
+            if out_dir is not None:
+                dest = str(out_dir / f"{path.stem}_ACX.mp3")
+            else:
+                dest = str(path.parent / f"{path.stem}_ACX.mp3")
+        print(f"dry-run: {action}  {path}  →  {dest}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.dry_run:
+        return _dry_run_plan(args)
 
     try:
         ffmpeg_version = require_ffmpeg()

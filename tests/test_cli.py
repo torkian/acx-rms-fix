@@ -115,3 +115,71 @@ def test_main_ffmpeg_missing_returns_1(monkeypatch, capsys):
     assert rc == 1
     err = capsys.readouterr().err
     assert "no ffmpeg" in err
+
+
+# ---- --dry-run tests ----
+
+
+def test_parser_accepts_dry_run_flag():
+    ns = cli.build_parser().parse_args(["--dry-run", "a.mp3"])
+    assert ns.dry_run is True
+
+
+def test_dry_run_exits_zero_without_ffmpeg(monkeypatch, tmp_path, capsys):
+    """--dry-run must not invoke ffmpeg even when it is absent."""
+    from acx_rms_fix.core import FfmpegMissingError
+
+    def no_ffmpeg():
+        raise FfmpegMissingError("absent")
+
+    monkeypatch.setattr(cli, "require_ffmpeg", no_ffmpeg)
+    rc = cli.main(["--dry-run", str(tmp_path / "ch.mp3")])
+    assert rc == 0
+
+
+def test_dry_run_does_not_call_process_one(monkeypatch, tmp_path, capsys):
+    calls = []
+    monkeypatch.setattr(cli, "process_one", lambda *a, **kw: calls.append(1))
+    rc = cli.main(["--dry-run", str(tmp_path / "ch.mp3")])
+    assert rc == 0
+    assert calls == []
+
+
+def test_dry_run_fix_prints_acx_output_path(tmp_path, capsys):
+    rc = cli.main(["--dry-run", str(tmp_path / "chapter01.mp3")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "dry-run" in out
+    assert "fix" in out
+    assert "chapter01_ACX.mp3" in out
+
+
+def test_dry_run_check_mode_shows_check(tmp_path, capsys):
+    rc = cli.main(["--dry-run", "--check", str(tmp_path / "chapter01.mp3")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "check" in out
+
+
+def test_dry_run_replace_mode_shows_backup(tmp_path, capsys):
+    rc = cli.main(["--dry-run", "--replace", str(tmp_path / "chapter01.mp3")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "replace" in out
+    assert "orig" in out
+
+
+def test_dry_run_respects_out_dir(tmp_path, capsys):
+    out_dir = tmp_path / "mastered"
+    rc = cli.main(["--dry-run", "-o", str(out_dir), str(tmp_path / "chapter01.mp3")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert str(out_dir) in out
+
+
+def test_dry_run_multiple_files(tmp_path, capsys):
+    rc = cli.main(["--dry-run", str(tmp_path / "ch01.mp3"), str(tmp_path / "ch02.mp3")])
+    assert rc == 0
+    out = capsys.readouterr().out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert len(lines) == 2
