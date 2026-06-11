@@ -10,10 +10,10 @@ from pathlib import Path
 
 from . import __version__
 from .core import (
-    NOISE_MAX,
     FfmpegMissingError,
     Measurement,
     RunReport,
+    planned_output,
     process_one,
     require_ffmpeg,
 )
@@ -66,17 +66,29 @@ def dim(t: str) -> str:
 # ---------------- formatting ----------------
 
 
+def _fmt_db(v: float | None) -> str:
+    if v is None:
+        return "?"
+    if v == float("-inf"):
+        return "-inf"
+    if v == float("inf"):
+        return "+inf"
+    return f"{v:.1f}"
+
+
 def format_measurement_line(m: Measurement) -> str:
+    rms, peak, floor = _fmt_db(m.rms_db), _fmt_db(m.peak_db), _fmt_db(m.noise_floor_db)
     if m.passes:
         return green(
-            f"  PASS  RMS={m.rms_db:.1f} dB  peak={m.peak_db:.1f} dB  "
-            f"noise-floor<{NOISE_MAX:.0f} dB"
+            f"  PASS  RMS={rms} dB  true-peak={peak} dB  noise-floor={floor} dB  format=ok"
         )
-    return yellow(
-        f"  FAIL  RMS={m.rms_db:.1f} dB [{'ok' if m.rms_ok else 'no'}]  "
-        f"peak={m.peak_db:.1f} dB [{'ok' if m.peak_ok else 'no'}]  "
-        f"noise-floor [{'ok' if m.noise_floor_ok else 'no'}]"
-    )
+    parts = [
+        f"RMS={rms} dB [{'ok' if m.rms_ok else 'no'}]",
+        f"peak={peak} dB [{'ok' if m.peak_ok else 'no'}]",
+        f"noise={floor} dB [{'ok' if m.noise_ok else 'no'}]",
+        f"format [{'ok' if m.format_ok else 'no'}]",
+    ]
+    return yellow("  FAIL  " + "  ".join(parts))
 
 
 def make_printer(quiet: bool):
@@ -123,17 +135,27 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="write outputs to this directory (default: alongside input)",
     )
-    p.add_argument(
+    # --replace and --check are conflicting actions; argparse rejects both.
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument(
         "-r",
         "--replace",
         action="store_true",
-        help="replace input in place; original is saved as *.orig.<ext>",
+        help="replace MP3 input in place (original kept as *.orig.mp3); "
+        "non-MP3 input is written as a sibling <stem>.mp3",
     )
-    p.add_argument(
+    mode.add_argument(
         "-c",
         "--check",
         action="store_true",
         help="only verify the input, do not re-encode",
+    )
+    p.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        help="preview what would be done without encoding "
+        "(combine with --replace to preview an in-place run)",
     )
     p.add_argument(
         "--report",
@@ -180,6 +202,25 @@ def main(argv: list[str] | None = None) -> int:
     report = RunReport(version=__version__, ffmpeg_version=ffmpeg_version)
     emit = make_printer(quiet=args.quiet or json_lines)
 
+    # Guard: in a writing run, two inputs that resolve to the same output path
+    # would silently overwrite each other (ffmpeg runs with -y). Refuse up front.
+    # Applied for --dry-run too so its preview matches what a real run would do.
+    if not args.check:
+        seen: dict[str, list[str]] = {}
+        for raw in args.inputs:
+            target = str(planned_output(Path(raw), args.out_dir, args.replace).resolve())
+            seen.setdefault(target, []).append(raw)
+        collisions = {t: srcs for t, srcs in seen.items() if len(srcs) > 1}
+        if collisions:
+            print(red("error: multiple inputs would write to the same output:"), file=sys.stderr)
+            for t, srcs in collisions.items():
+                print(red(f"  {t}  <-  {', '.join(srcs)}"), file=sys.stderr)
+            print(
+                red("  rename the inputs or use -o to write them to separate folders."),
+                file=sys.stderr,
+            )
+            return 1
+
     for raw in args.inputs:
         path = Path(raw)
         result = process_one(
@@ -187,6 +228,7 @@ def main(argv: list[str] | None = None) -> int:
             out_dir=args.out_dir,
             replace=args.replace,
             check_only=args.check,
+            dry_run=args.dry_run,
             on_progress=emit,
         )
         report.results.append(result)
@@ -200,7 +242,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(format_measurement_line(m))
 
     if report.results and not json_lines:
-        if report.fail_count == 0:
+        if args.dry_run:
+            n = sum(1 for r in report.results if not r.error)
+            ok = sum(1 for r in report.results if r.passed)
+            print(dim(f"dry-run: {n} file(s) would be mastered ({ok} already compliant)"))
+        elif report.fail_count == 0:
             print(green(f"all {report.pass_count} file(s) ACX-compliant"))
         else:
             print(red(f"{report.fail_count} file(s) did not meet ACX spec"))
@@ -209,6 +255,8 @@ def main(argv: list[str] | None = None) -> int:
         write_report(report, args.report)
         print(dim(f"report written: {args.report}"))
 
+    if args.dry_run:
+        return 0
     return 0 if report.fail_count == 0 else 2
 
 

@@ -12,126 +12,218 @@ from acx_rms_fix import core
 # ---------------- Measurement ----------------
 
 
+def _ok_measurement(**over) -> core.Measurement:
+    """A fully ACX-compliant Measurement; override one field to test a failure."""
+    base = dict(
+        rms_db=-20.3,
+        peak_db=-3.5,
+        noise_floor_db=-70.0,
+        sample_peak_db=-3.6,
+        codec="mp3",
+        sample_rate=44100,
+        channels=1,
+        bitrate_kbps=192,
+    )
+    base.update(over)
+    return core.Measurement(**base)
+
+
 def test_measurement_passes_when_all_metrics_ok():
-    m = core.Measurement(rms_db=-20.3, peak_db=-3.5, noise_floor_ok=True)
-    assert m.rms_ok
-    assert m.peak_ok
+    m = _ok_measurement()
+    assert m.rms_ok and m.peak_ok and m.noise_ok and m.format_ok
     assert m.passes
 
 
 def test_measurement_fails_rms_too_low():
-    m = core.Measurement(rms_db=-25.0, peak_db=-3.5, noise_floor_ok=True)
+    m = _ok_measurement(rms_db=-25.0)
     assert not m.rms_ok
     assert m.peak_ok
     assert not m.passes
 
 
 def test_measurement_fails_rms_too_high():
-    m = core.Measurement(rms_db=-17.0, peak_db=-3.5, noise_floor_ok=True)
+    m = _ok_measurement(rms_db=-17.0)
     assert not m.rms_ok
     assert not m.passes
 
 
 def test_measurement_fails_peak_too_high():
-    m = core.Measurement(rms_db=-20.3, peak_db=-2.0, noise_floor_ok=True)
+    m = _ok_measurement(peak_db=-2.0)
     assert m.rms_ok
     assert not m.peak_ok
     assert not m.passes
 
 
-def test_measurement_fails_noise_floor():
-    m = core.Measurement(rms_db=-20.3, peak_db=-3.5, noise_floor_ok=False)
-    assert m.rms_ok
-    assert m.peak_ok
+def test_measurement_fails_noise_floor_too_high():
+    m = _ok_measurement(noise_floor_db=-50.0)
+    assert m.rms_ok and m.peak_ok
+    assert not m.noise_ok
     assert not m.passes
 
 
+def test_measurement_fails_wrong_sample_rate():
+    assert not _ok_measurement(sample_rate=48000).format_ok
+    assert not _ok_measurement(sample_rate=48000).passes
+
+
+def test_measurement_fails_stereo():
+    assert not _ok_measurement(channels=2).format_ok
+    assert not _ok_measurement(channels=2).passes
+
+
+def test_measurement_fails_non_mp3_codec():
+    assert not _ok_measurement(codec="pcm_s16le").format_ok
+    assert not _ok_measurement(codec="aac").passes
+
+
+def test_measurement_fails_wrong_bitrate():
+    assert not _ok_measurement(bitrate_kbps=128).format_ok
+    assert _ok_measurement(bitrate_kbps=192).format_ok  # within tolerance
+
+
 def test_measurement_rms_ok_at_exact_boundaries():
-    assert core.Measurement(rms_db=core.RMS_MIN, peak_db=-5, noise_floor_ok=True).rms_ok
-    assert core.Measurement(rms_db=core.RMS_MAX, peak_db=-5, noise_floor_ok=True).rms_ok
+    assert _ok_measurement(rms_db=core.RMS_MIN).rms_ok
+    assert _ok_measurement(rms_db=core.RMS_MAX).rms_ok
 
 
 def test_measurement_none_values_fail():
     m = core.Measurement()
     assert not m.rms_ok
     assert not m.peak_ok
+    assert not m.noise_ok
+    assert not m.format_ok
     assert not m.passes
 
 
-# ---------------- volume detect regex ----------------
+# ---------------- measurement parsing (astats / ebur128 / stream banner) ----------------
 
-_FAKE_VOLUMEDETECT_OUTPUT = """
-[Parsed_volumedetect_0 @ 0x7f...] n_samples: 1023366
-[Parsed_volumedetect_0 @ 0x7f...] mean_volume: -20.4 dB
-[Parsed_volumedetect_0 @ 0x7f...] max_volume: -3.5 dB
-[Parsed_volumedetect_0 @ 0x7f...] histogram_0db: 1
+_FAKE_ASTATS_OUTPUT = """
+  Stream #0:0: Audio: mp3 (mp3float), 44100 Hz, mono, fltp, 192 kb/s
+[Parsed_astats_0 @ 0x] Channel: 1
+[Parsed_astats_0 @ 0x] Peak level dB: -3.46
+[Parsed_astats_0 @ 0x] RMS level dB: -20.27
+[Parsed_astats_0 @ 0x] Noise floor dB: -91.97
+[Parsed_astats_0 @ 0x] Overall
+[Parsed_astats_0 @ 0x] Peak level dB: -3.46
+[Parsed_astats_0 @ 0x] RMS level dB: -20.27
+[Parsed_astats_0 @ 0x] Noise floor dB: -91.97
+""".strip()
+
+_FAKE_EBUR128_OUTPUT = """
+  Integrated loudness:
+    I:         -20.2 LUFS
+  True peak:
+    Peak:       -3.4 dBFS
 """.strip()
 
 
-def test_measure_volume_regex(monkeypatch, tmp_path):
-    def fake_run(args, **kwargs):
-        return subprocess.CompletedProcess(
-            args=args,
-            returncode=0,
-            stdout="",
-            stderr=_FAKE_VOLUMEDETECT_OUTPUT,
-        )
-
-    monkeypatch.setattr(core.subprocess, "run", fake_run)
-    wav = tmp_path / "fake.wav"
-    wav.write_bytes(b"fake")
-    mean, peak = core.measure_volume(wav)
-    assert mean == -20.4
-    assert peak == -3.5
+def _fake_cp(stderr: str, returncode: int = 0):
+    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout="", stderr=stderr)
 
 
-def test_measure_volume_raises_when_output_has_no_numbers(monkeypatch, tmp_path):
-    def fake_run(args, **kwargs):
-        return subprocess.CompletedProcess(
-            args=args,
-            returncode=0,
-            stdout="",
-            stderr="oops no data",
-        )
-
-    monkeypatch.setattr(core.subprocess, "run", fake_run)
-    wav = tmp_path / "fake.wav"
-    wav.write_bytes(b"fake")
-    with pytest.raises(RuntimeError, match="could not measure volume"):
-        core.measure_volume(wav)
+def test_parse_stream_info_mp3():
+    info = core._parse_stream_info(_FAKE_ASTATS_OUTPUT)
+    assert info["codec"] == "mp3"
+    assert info["sample_rate"] == 44100
+    assert info["channels"] == 1
+    assert info["bitrate_kbps"] == 192
 
 
-# ---------------- noise_floor_ok ----------------
+def test_parse_stream_info_stereo_wav():
+    line = (
+        "  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s"
+    )
+    info = core._parse_stream_info(line)
+    assert info["codec"] == "pcm_s16le"
+    assert info["sample_rate"] == 48000
+    assert info["channels"] == 2
+    assert info["bitrate_kbps"] == 1536
 
 
-def test_noise_floor_ok_true_when_silence_detected(monkeypatch, tmp_path):
-    def fake_run(args, **kwargs):
-        return subprocess.CompletedProcess(
-            args=args,
-            returncode=0,
-            stdout="",
-            stderr="silence_start: 0.5\nsilence_end: 1.2",
-        )
-
-    monkeypatch.setattr(core.subprocess, "run", fake_run)
-    wav = tmp_path / "fake.wav"
-    wav.write_bytes(b"fake")
-    assert core.noise_floor_ok(wav) is True
+def test_measure_astats_parses_overall_block(monkeypatch, tmp_path):
+    monkeypatch.setattr(core, "_run_ffmpeg", lambda args: _fake_cp(_FAKE_ASTATS_OUTPUT))
+    f = tmp_path / "x.mp3"
+    f.write_bytes(b"x")
+    rms, peak, floor, info = core._measure_astats(f)
+    assert rms == -20.27
+    assert peak == -3.46
+    assert floor == -91.97
+    assert info["sample_rate"] == 44100
 
 
-def test_noise_floor_ok_false_when_no_silence(monkeypatch, tmp_path):
-    def fake_run(args, **kwargs):
-        return subprocess.CompletedProcess(
-            args=args,
-            returncode=0,
-            stdout="",
-            stderr="no silence here",
-        )
+def test_measure_astats_raises_on_unparseable(monkeypatch, tmp_path):
+    monkeypatch.setattr(core, "_run_ffmpeg", lambda args: _fake_cp("nothing useful here"))
+    f = tmp_path / "x.mp3"
+    f.write_bytes(b"x")
+    with pytest.raises(RuntimeError, match="could not parse astats"):
+        core._measure_astats(f)
 
-    monkeypatch.setattr(core.subprocess, "run", fake_run)
-    wav = tmp_path / "fake.wav"
-    wav.write_bytes(b"fake")
-    assert core.noise_floor_ok(wav) is False
+
+def test_measure_astats_raises_on_ffmpeg_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(core, "_run_ffmpeg", lambda args: _fake_cp("boom", returncode=1))
+    f = tmp_path / "x.mp3"
+    f.write_bytes(b"x")
+    with pytest.raises(RuntimeError, match="could not measure"):
+        core._measure_astats(f)
+
+
+def test_measure_true_peak_parses_summary(monkeypatch, tmp_path):
+    monkeypatch.setattr(core, "_run_ffmpeg", lambda args: _fake_cp(_FAKE_EBUR128_OUTPUT))
+    f = tmp_path / "x.mp3"
+    f.write_bytes(b"x")
+    assert core._measure_true_peak(f) == -3.4
+
+
+def test_to_db_handles_inf_and_nan():
+    assert core._to_db("-20.27") == -20.27
+    assert core._to_db("-inf") == float("-inf")
+    assert core._to_db("nan") == float("-inf")
+    assert core._to_db("inf") == float("inf")
+
+
+# ---------------- planned_output ----------------
+
+
+def test_planned_output_fix_default(tmp_path):
+    p = tmp_path / "chapter.mp3"
+    assert core.planned_output(p, None, replace=False) == tmp_path / "chapter_ACX.mp3"
+
+
+def test_planned_output_fix_out_dir(tmp_path):
+    p = tmp_path / "chapter.wav"
+    out = tmp_path / "mastered"
+    assert core.planned_output(p, out, replace=False) == out / "chapter_ACX.mp3"
+
+
+def test_planned_output_replace_mp3_is_in_place(tmp_path):
+    p = tmp_path / "chapter.mp3"
+    assert core.planned_output(p, None, replace=True) == p
+
+
+def test_planned_output_replace_non_mp3_falls_back_to_acx_sibling(tmp_path):
+    # Replacing a non-MP3 must not overwrite the original or an unrelated file:
+    # it falls back to the standard <stem>_ACX.mp3 sibling.
+    p = tmp_path / "chapter.wav"
+    assert core.planned_output(p, None, replace=True) == tmp_path / "chapter_ACX.mp3"
+
+
+def test_to_dict_nulls_non_finite_floats():
+    """Digital silence yields -inf; to_dict() must null it so JSON stays valid."""
+    import json
+
+    fr = core.FileResult(
+        input_path="x.mp3",
+        output_path="x.mp3",
+        action="check",
+        before=_ok_measurement(noise_floor_db=float("-inf")),
+        after=_ok_measurement(noise_floor_db=float("-inf")),
+        passed=True,
+    )
+    d = fr.to_dict()
+    assert d["before"]["noise_floor_db"] is None
+    # Round-trips through strict JSON (no Infinity/NaN tokens).
+    text = json.dumps(d, allow_nan=False)
+    assert "Infinity" not in text
 
 
 # ---------------- filter chain strings ----------------
@@ -236,7 +328,7 @@ def test_process_one_invokes_progress_callback(monkeypatch, tmp_path):
     fake.write_bytes(b"fake")
 
     def fake_measure(path):
-        return core.Measurement(rms_db=-20.0, peak_db=-3.5, noise_floor_ok=True)
+        return _ok_measurement()
 
     monkeypatch.setattr(core, "measure", fake_measure)
 
@@ -244,3 +336,23 @@ def test_process_one_invokes_progress_callback(monkeypatch, tmp_path):
     r = core.process_one(fake, check_only=True, on_progress=messages.append)
     assert r.passed
     assert any("check:" in m for m in messages)
+
+
+def test_process_one_dry_run_does_not_encode(monkeypatch, tmp_path):
+    """dry-run measures the input and reports the planned output without writing."""
+    fake = tmp_path / "chapter.wav"
+    fake.write_bytes(b"fake")
+
+    monkeypatch.setattr(core, "measure", lambda path: _ok_measurement(rms_db=-30.0))
+    # master() must never be called in a dry run.
+    monkeypatch.setattr(
+        core, "master", lambda *a, **k: pytest.fail("master() should not run during --dry-run")
+    )
+
+    messages: list[str] = []
+    r = core.process_one(fake, out_dir=tmp_path / "out", dry_run=True, on_progress=messages.append)
+    assert r.action == "dry-run"
+    assert r.output_path.endswith("chapter_ACX.mp3")
+    assert r.after is None
+    assert not r.passed  # rms -30 is too low
+    assert any("would write" in m for m in messages)
