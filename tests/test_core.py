@@ -226,6 +226,31 @@ def test_to_dict_nulls_non_finite_floats():
     assert "Infinity" not in text
 
 
+# ---------------- find_output_collisions ----------------
+
+
+def test_find_output_collisions_detects_duplicate_stems(tmp_path):
+    a = tmp_path / "x" / "ch1.wav"
+    b = tmp_path / "y" / "ch1.wav"
+    a.parent.mkdir()
+    b.parent.mkdir()
+    a.write_bytes(b"a")
+    b.write_bytes(b"b")
+    col = core.find_output_collisions([a, b], tmp_path / "out", replace=False)
+    assert len(col) == 1
+    ((target, srcs),) = col.items()
+    assert target.endswith("ch1_ACX.mp3")
+    assert set(srcs) == {a, b}
+
+
+def test_find_output_collisions_none_when_distinct(tmp_path):
+    a = tmp_path / "ch1.wav"
+    b = tmp_path / "ch2.wav"
+    a.write_bytes(b"a")
+    b.write_bytes(b"b")
+    assert core.find_output_collisions([a, b], None, replace=False) == {}
+
+
 # ---------------- filter chain strings ----------------
 
 

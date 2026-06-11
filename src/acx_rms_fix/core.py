@@ -462,6 +462,22 @@ def planned_output(input_path: Path, out_dir: Path | None, replace: bool) -> Pat
     return base / f"{input_path.stem}_ACX.mp3"
 
 
+def find_output_collisions(
+    input_paths: list[Path], out_dir: Path | None, replace: bool
+) -> dict[str, list[Path]]:
+    """
+    Map each output path that more than one input would write to -> those inputs.
+
+    Empty dict means every input has a distinct destination. Shared by the CLI
+    and the GUI so both refuse to silently overwrite outputs in a batch run.
+    """
+    seen: dict[str, list[Path]] = {}
+    for p in input_paths:
+        target = str(planned_output(p, out_dir, replace).resolve())
+        seen.setdefault(target, []).append(p)
+    return {t: ps for t, ps in seen.items() if len(ps) > 1}
+
+
 # ---------------- per-file orchestration ----------------
 
 ProgressFn = Callable[[str], None]

@@ -207,3 +207,50 @@ def test_collision_guard_returns_1(monkeypatch, tmp_path, capsys):
     rc = cli.main(["-o", str(tmp_path / "out"), str(a), str(b)])
     assert rc == 1
     assert "same output" in capsys.readouterr().err
+
+
+def test_dry_run_with_check_is_rejected():
+    with pytest.raises(SystemExit):
+        cli.main(["--dry-run", "--check", "a.mp3"])
+
+
+def test_dry_run_returns_2_on_error(monkeypatch, tmp_path):
+    """A previewed file that errors (missing input) makes --dry-run exit non-zero."""
+    monkeypatch.setattr(cli, "require_ffmpeg", lambda: "fake ffmpeg")
+    rc = cli.main(["--dry-run", str(tmp_path / "missing.mp3")])
+    assert rc == 2
+
+
+def test_json_lines_report_status_goes_to_stderr(monkeypatch, tmp_path, capsys):
+    """--json-lines --report must keep the 'report written' line off stdout."""
+    import json
+
+    from acx_rms_fix.core import FileResult, Measurement
+
+    m = Measurement(
+        rms_db=-20.5,
+        peak_db=-4.0,
+        noise_floor_db=-70.0,
+        codec="mp3",
+        sample_rate=44100,
+        channels=1,
+        bitrate_kbps=192,
+    )
+    fake = FileResult(
+        input_path="ch.mp3",
+        output_path=None,
+        action="check",
+        before=m,
+        after=m,
+        passed=True,
+    )
+    monkeypatch.setattr(cli, "require_ffmpeg", lambda: "fake ffmpeg")
+    monkeypatch.setattr(cli, "process_one", lambda *a, **kw: fake)
+
+    rp = tmp_path / "r.json"
+    cli.main(["--json-lines", "--check", str(tmp_path / "ch.mp3"), "--report", str(rp)])
+    out = capsys.readouterr()
+    assert "report written" not in out.out
+    assert "report written" in out.err
+    lines = [ln for ln in out.out.splitlines() if ln.strip()]
+    assert len(lines) == 1 and json.loads(lines[0])["passed"] is True

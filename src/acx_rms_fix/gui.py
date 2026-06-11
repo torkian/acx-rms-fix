@@ -39,6 +39,7 @@ from .core import (
     FileResult,
     Measurement,
     RunReport,
+    find_output_collisions,
     process_one,
     require_ffmpeg,
 )
@@ -277,6 +278,22 @@ class AcxRmsFixApp:
 
         out_dir = None if self.replace_var.get() else Path(self.out_var.get())
         replace = self.replace_var.get()
+
+        # Refuse to start if two queued files would write to the same output —
+        # same guard the CLI uses, so a batch never silently overwrites itself.
+        collisions = find_output_collisions(self.queue_files, out_dir, replace)
+        if collisions:
+            detail = "\n".join(
+                f"• {', '.join(p.name for p in srcs)}  →  {Path(t).name}"
+                for t, srcs in collisions.items()
+            )
+            messagebox.showerror(
+                "Output name collision",
+                "These queued files would overwrite each other:\n\n"
+                f"{detail}\n\n"
+                "Rename them, or use separate output folders, then try again.",
+            )
+            return
 
         self.fix_btn.state(["disabled"])
         self.save_btn.state(["disabled"])
