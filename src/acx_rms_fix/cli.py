@@ -13,7 +13,7 @@ from .core import (
     FfmpegMissingError,
     Measurement,
     RunReport,
-    planned_output,
+    find_output_collisions,
     process_one,
     require_ffmpeg,
 )
@@ -190,7 +190,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.dry_run and args.check:
+        parser.error("--dry-run cannot be combined with --check (both are non-destructive)")
 
     try:
         ffmpeg_version = require_ffmpeg()
@@ -206,15 +210,13 @@ def main(argv: list[str] | None = None) -> int:
     # would silently overwrite each other (ffmpeg runs with -y). Refuse up front.
     # Applied for --dry-run too so its preview matches what a real run would do.
     if not args.check:
-        seen: dict[str, list[str]] = {}
-        for raw in args.inputs:
-            target = str(planned_output(Path(raw), args.out_dir, args.replace).resolve())
-            seen.setdefault(target, []).append(raw)
-        collisions = {t: srcs for t, srcs in seen.items() if len(srcs) > 1}
+        collisions = find_output_collisions(
+            [Path(r) for r in args.inputs], args.out_dir, args.replace
+        )
         if collisions:
             print(red("error: multiple inputs would write to the same output:"), file=sys.stderr)
             for t, srcs in collisions.items():
-                print(red(f"  {t}  <-  {', '.join(srcs)}"), file=sys.stderr)
+                print(red(f"  {t}  <-  {', '.join(str(p) for p in srcs)}"), file=sys.stderr)
             print(
                 red("  rename the inputs or use -o to write them to separate folders."),
                 file=sys.stderr,
@@ -253,10 +255,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.report:
         write_report(report, args.report)
-        print(dim(f"report written: {args.report}"))
+        # Keep this status line off stdout under --json-lines so the JSONL stream
+        # stays a clean sequence of JSON objects for jq and other parsers.
+        print(dim(f"report written: {args.report}"), file=sys.stderr if json_lines else sys.stdout)
 
     if args.dry_run:
-        return 0
+        return 2 if any(r.error for r in report.results) else 0
     return 0 if report.fail_count == 0 else 2
 
 

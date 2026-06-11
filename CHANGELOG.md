@@ -17,6 +17,20 @@ All notable changes to `acx-rms-fix` are documented here. Format loosely based o
 
 ---
 
+## [0.1.5] — GUI collision guard
+
+Follow-up to 0.1.4, from a post-release Codex review of the shipped code.
+
+### Fixed
+- **GUI could silently overwrite batch outputs.** The output-collision guard added to the CLI in 0.1.4 was never wired into the GUI, so queuing two files with the same stem (e.g. `a/ch1.wav` and `b/ch1.wav`) into one output folder let them overwrite each other. The check now lives in `core.find_output_collisions()` and is shared by both the CLI and the GUI, which shows an error dialog and refuses to start.
+- **`--dry-run` always exited `0`**, even when a previewed file errored (e.g. missing input). It now exits non-zero if any result has an error.
+- **`--json-lines --report` corrupted the stream** — the `report written: …` status line printed to stdout among the JSON objects. It now goes to stderr when `--json-lines` is active.
+
+### Changed
+- `--dry-run` combined with `--check` is now rejected (both are non-destructive previews, so the combination was meaningless and masked check failures).
+
+---
+
 ## [0.1.4] — accurate verification
 
 This release closes gaps in the **verification** step where a file could be
